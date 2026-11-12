@@ -8,7 +8,7 @@
   ],
   "scripts": {
     "dev": "concurrently \"npm --prefix market-aura-4u-backend-main start\" \"npm --prefix market-aura-4u-frontend-main run dev\" \"cd CAPSTONE && .venv/bin/python src/serve.py\"",
-    "prepare": "husky",
+    "prepare": "node -e \"if (process.env.NODE_ENV !== 'production') { try { require('child_process').execSync('husky', { stdio: 'inherit' }); } catch (e) {} }\"",
     "lint:backend": "eslint market-aura-4u-backend-main/src market-aura-4u-backend-main/tests",
     "lint:frontend": "npm --prefix market-aura-4u-frontend-main run check",
     "lint": "npm run lint:backend && npm run lint:frontend",
