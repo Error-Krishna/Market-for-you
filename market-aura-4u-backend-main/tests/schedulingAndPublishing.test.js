@@ -1,9 +1,13 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const { beforeEach, afterEach, test, mock } = require('node:test');
 const User = require('../src/models/User');
 const Job = require('../src/models/Job');
 const MediaAsset = require('../src/models/MediaAsset');
 const ScheduledPost = require('../src/models/ScheduledPost');
+const { UPLOADS_ROOT } = require('../src/controllers/media/mediaController');
+const { publish: publishEmail } = require('../src/services/publishers/emailPublisher');
 const { encryptSecret, decryptSecret } = require('../src/utils/tokenCrypto');
 const { computeNextRecommendedDate } = require('../src/utils/recommendedTime');
 const { createPost, publishPostNow } = require('../src/controllers/content/scheduleController');
@@ -288,4 +292,183 @@ test('createPost trims valid whitespace-padded jobId and rejects malformed jobId
   }, okRes);
   assert.equal(okRes.statusCode, 201);
   assert.equal(okRes.body.success, true);
+});
+
+test('emailPublisher attaches local mp4 video and remote inline image for Resend without leaking localhost links', async () => {
+  const userId = '507f1f77bcf86cd799439055';
+  const uploadDir = path.join(UPLOADS_ROOT, userId);
+  const videoName = '11111111-1111-4111-8111-111111111111.mp4';
+  const videoPath = path.join(uploadDir, videoName);
+  const sampleMp4 = Buffer.from([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x6d, 0x70, 0x34, 0x32]);
+  fs.mkdirSync(uploadDir, { recursive: true });
+  fs.writeFileSync(videoPath, sampleMp4);
+
+  try {
+    let sentResendBody = null;
+    mock.method(globalThis, 'fetch', async (url, init) => {
+      if (String(url) === 'https://cdn.example.com/hero.png') {
+        return new Response(Buffer.from([0x89, 0x50, 0x4e, 0x47]), {
+          status: 200,
+          headers: { 'content-type': 'image/png' },
+        });
+      }
+      if (String(url) === 'https://api.resend.com/emails') {
+        sentResendBody = JSON.parse(init.body);
+        return new Response(JSON.stringify({ id: 'email_123' }), { status: 200 });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    const localUrl = `http://localhost:8000/uploads/media/${userId}/${videoName}`;
+    const result = await publishEmail({
+      user: {
+        socialAccounts: {
+          email: {
+            isConnected: true,
+            provider: 'resend',
+            fromEmail: 'hello@example.com',
+            defaultRecipients: ['reader@example.com'],
+            secretEnc: encryptSecret('re_test_key'),
+          },
+        },
+      },
+      content: { subject: 'Video Update', body: 'Check out <demo> clip!' },
+      mediaUrls: [localUrl, localUrl, 'https://cdn.example.com/hero.png'],
+    });
+
+    assert.equal(result.externalPostId, 'email_123');
+    assert.equal(sentResendBody.attachments.length, 2);
+    assert.deepEqual(sentResendBody.attachments[0], {
+      filename: videoName,
+      content: sampleMp4.toString('base64'),
+      contentType: 'video/mp4',
+    });
+    assert.equal(sentResendBody.attachments[1].filename, 'hero.png');
+    assert.equal(sentResendBody.attachments[1].contentType, 'image/png');
+    assert.equal(sentResendBody.attachments[1].contentId, 'media-2');
+    assert.match(sentResendBody.html, /&lt;demo&gt;/);
+    assert.match(sentResendBody.html, /cid:media-2/);
+    assert.doesNotMatch(sentResendBody.html, /localhost/);
+    assert.doesNotMatch(sentResendBody.text, /localhost/);
+    assert.match(sentResendBody.text, new RegExp(videoName));
+  } finally {
+    fs.rmSync(uploadDir, { recursive: true, force: true });
+  }
+});
+
+test('emailPublisher attaches video and disambiguates duplicate filenames for SendGrid and Webhook', async () => {
+  const sampleVideo = Buffer.from([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x6d, 0x70, 0x34, 0x32]);
+  let sendgridPayload = null;
+  let webhookPayload = null;
+
+  mock.method(globalThis, 'fetch', async (url, init) => {
+    if (String(url).startsWith('https://cdn.example.com/')) {
+      return new Response(sampleVideo, {
+        status: 200,
+        headers: { 'content-type': 'application/octet-stream' },
+      });
+    }
+    if (String(url) === 'https://api.sendgrid.com/v3/mail/send') {
+      sendgridPayload = JSON.parse(init.body);
+      return new Response('', { status: 202 });
+    }
+    if (String(url) === 'https://hooks.example.com/email') {
+      webhookPayload = JSON.parse(init.body);
+      return new Response(JSON.stringify({ id: 'wh_1' }), { status: 200 });
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  });
+
+  await publishEmail({
+    user: {
+      socialAccounts: {
+        email: {
+          isConnected: true,
+          provider: 'sendgrid',
+          fromEmail: 'hello@example.com',
+          defaultRecipients: ['a@example.com'],
+          secretEnc: encryptSecret('SG.test'),
+        },
+      },
+    },
+    content: { subject: 'Two Videos', body: 'Watch both clips.' },
+    mediaUrls: ['https://cdn.example.com/a/clip.mp4', 'https://cdn.example.com/b/clip.mp4'],
+  });
+
+  assert.equal(sendgridPayload.attachments.length, 2);
+  assert.equal(sendgridPayload.attachments[0].filename, 'clip.mp4');
+  assert.equal(sendgridPayload.attachments[0].type, 'video/mp4');
+  assert.equal(sendgridPayload.attachments[0].disposition, 'attachment');
+  assert.equal(sendgridPayload.attachments[1].filename, 'clip-2.mp4');
+  assert.match(sendgridPayload.content[1].value, /https:\/\/cdn\.example\.com\/a\/clip\.mp4/);
+
+  await publishEmail({
+    user: {
+      socialAccounts: {
+        email: {
+          isConnected: true,
+          provider: 'webhook',
+          fromEmail: 'hello@example.com',
+          defaultRecipients: ['a@example.com'],
+          webhookUrl: 'https://hooks.example.com/email',
+        },
+      },
+    },
+    content: { subject: 'Webhook Video', body: 'Attached.' },
+    mediaUrls: ['https://cdn.example.com/a/clip.mp4'],
+  });
+
+  assert.equal(webhookPayload.mediaUrls.length, 1);
+  assert.equal(webhookPayload.attachments[0].filename, 'clip.mp4');
+  assert.equal(webhookPayload.attachments[0].contentType, 'video/mp4');
+});
+
+test('emailPublisher fails clearly when local upload is missing or attachments exceed SendGrid size limit', async () => {
+  await assert.rejects(
+    () => publishEmail({
+      user: {
+        socialAccounts: {
+          email: {
+            isConnected: true,
+            provider: 'resend',
+            fromEmail: 'hello@example.com',
+            defaultRecipients: ['a@example.com'],
+            secretEnc: encryptSecret('re_test_key'),
+          },
+        },
+      },
+      content: { subject: 'Missing', body: 'Video body' },
+      mediaUrls: ['http://localhost:8000/uploads/media/507f1f77bcf86cd799439011/22222222-2222-4222-8222-222222222222.mp4'],
+    }),
+    (err) => err.code === 'INVALID_MEDIA' && err.retryable === false && /not found/i.test(err.message),
+  );
+
+  const bigChunk = Buffer.alloc(9 * 1024 * 1024, 0x41);
+  mock.method(globalThis, 'fetch', async () => new Response(bigChunk, {
+    status: 200,
+    headers: { 'content-type': 'video/mp4' },
+  }));
+
+  await assert.rejects(
+    () => publishEmail({
+      user: {
+        socialAccounts: {
+          email: {
+            isConnected: true,
+            provider: 'sendgrid',
+            fromEmail: 'hello@example.com',
+            defaultRecipients: ['a@example.com'],
+            secretEnc: encryptSecret('SG.test'),
+          },
+        },
+      },
+      content: { subject: 'Too Big', body: 'Three large clips' },
+      mediaUrls: [
+        'https://cdn.example.com/1.mp4',
+        'https://cdn.example.com/2.mp4',
+        'https://cdn.example.com/3.mp4',
+      ],
+    }),
+    (err) => err.code === 'INVALID_MEDIA' && err.retryable === false && /size limit/i.test(err.message),
+  );
 });
