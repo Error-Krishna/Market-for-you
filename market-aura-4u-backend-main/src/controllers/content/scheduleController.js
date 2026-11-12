@@ -123,11 +123,19 @@ const createPost = async (req, res) => {
 
     let job = null;
     let jobContent = {};
-    if (jobId) {
-      if (!mongoose.isValidObjectId(jobId)) {
-        return res.status(400).json({ success: false, message: 'Invalid jobId.' });
+    const normalizedJobId = typeof jobId === 'string' ? jobId.trim() : '';
+    if (jobId !== undefined && jobId !== null && normalizedJobId !== '') {
+      if (
+        typeof jobId !== 'string' ||
+        !/^[a-f\d]{24}$/i.test(normalizedJobId) ||
+        !mongoose.isValidObjectId(normalizedJobId)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid content job ID. Please regenerate content or publish via Manual Broadcast.',
+        });
       }
-      job = await Job.findOne({ _id: jobId, userId });
+      job = await Job.findOne({ _id: normalizedJobId, userId });
       if (!job || job.status !== 'completed') {
         return res.status(404).json({ success: false, message: 'Completed content generation job not found.' });
       }

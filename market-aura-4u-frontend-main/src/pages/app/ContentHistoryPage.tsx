@@ -130,7 +130,7 @@ export default function ContentHistoryPage() {
 
                   {expandedPostJobId === item.id && (
                     <PublishSchedulePanel
-                      jobId={item.id}
+                      jobId={OBJECT_ID_REGEX.test(item.id) ? item.id : undefined}
                       title={item.originalContent}
                       content={item.generatedContent}
                     />
@@ -167,6 +167,19 @@ export default function ContentHistoryPage() {
   );
 }
 
+const OBJECT_ID_REGEX = /^[a-f\d]{24}$/i;
+
+function extractRecordId(candidate: Record<string, unknown>, index: number): string {
+  const rawOid =
+    isRecord(candidate._id) && typeof candidate._id.$oid === "string" ? candidate._id.$oid : null;
+  for (const raw of [candidate.id, candidate._id, rawOid, candidate.jobId]) {
+    if (typeof raw === "string" && raw.trim().length > 0) {
+      return raw.trim();
+    }
+  }
+  return `legacy-${index}`;
+}
+
 function normalizeJobs(value: unknown): HistoryItem[] {
   if (!Array.isArray(value)) return [];
 
@@ -174,12 +187,7 @@ function normalizeJobs(value: unknown): HistoryItem[] {
   return value.flatMap((candidate, index) => {
     if (!isRecord(candidate)) return [];
 
-    const recordId =
-      typeof candidate.id === "string"
-        ? candidate.id
-        : typeof candidate._id === "string"
-          ? candidate._id
-          : `legacy-${index}`;
+    const recordId = extractRecordId(candidate, index);
     if (seenIds.has(recordId)) return [];
     seenIds.add(recordId);
     const status =

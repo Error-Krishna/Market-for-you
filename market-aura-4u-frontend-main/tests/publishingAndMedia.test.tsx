@@ -359,3 +359,41 @@ test("DashboardPage renders clear error alert and retries on profile load failur
   });
   spy.mockRestore();
 });
+
+test("PublishSchedulePanel falls back to manual_broadcast with explicit content when given a synthetic legacy ID", async () => {
+  createPostMutateAsync.mockResolvedValue({
+    message: "Published immediately",
+    post: {
+      _id: "post-legacy-1",
+      status: "published",
+      platforms: [{ platform: "email", status: "published" }],
+    },
+  });
+
+  render(
+    <MemoryRouter>
+      <PublishSchedulePanel
+        jobId="legacy-0"
+        title="Email Newsletter"
+        content={{
+          email: { subject: "Hidden Gems", body: "Visit Gokarna and Chopta!" },
+        }}
+      />
+    </MemoryRouter>,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: /Post Now/i }));
+
+  await waitFor(() => {
+    expect(createPostMutateAsync).toHaveBeenCalledTimes(1);
+    const payload = createPostMutateAsync.mock.calls[0][0];
+    expect(payload.sourceType).toBe("manual_broadcast");
+    expect(payload.jobId).toBeUndefined();
+    expect(payload.platforms).toEqual([
+      expect.objectContaining({
+        platform: "email",
+        content: { subject: "Hidden Gems", body: "Visit Gokarna and Chopta!" },
+      }),
+    ]);
+  });
+});

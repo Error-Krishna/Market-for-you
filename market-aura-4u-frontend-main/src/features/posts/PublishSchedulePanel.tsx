@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   AlertCircle,
@@ -33,12 +33,15 @@ import type { ScheduledPost } from "./posts.types";
 import { useCreatePost } from "./usePosts";
 
 interface PublishSchedulePanelProps {
-  jobId: string;
+  jobId?: string;
   title?: string;
   content: GeneratedContent;
 }
 
 export function PublishSchedulePanel({ jobId, title, content }: PublishSchedulePanelProps) {
+  const panelInstanceId = useId();
+  const normalizedJobId = typeof jobId === "string" ? jobId.trim() : "";
+  const canUseBackendJobId = normalizedJobId.length > 0 && !/^legacy-/i.test(normalizedJobId);
   const availablePlatforms = useMemo(() => extractAvailablePlatforms(content), [content]);
   const recommendedWindow = extractRecommendedPostingTime(content);
   const recommendedLabel = formatRecommendedWindow(recommendedWindow);
@@ -83,7 +86,7 @@ export function PublishSchedulePanel({ jobId, title, content }: PublishScheduleP
     (p) => socialStatus && !socialStatus.platforms[p]?.isConnected,
   );
 
-  const buildPlatformEntries = () => {
+  const buildPlatformEntries = (alwaysIncludeContent: boolean) => {
     const mediaIds = attachedMedia.map(getMediaAssetId).filter(Boolean);
     const mediaUrls = attachedMedia.map((m) => m.url);
 
@@ -99,7 +102,7 @@ export function PublishSchedulePanel({ jobId, title, content }: PublishScheduleP
         platform,
         mediaAssetIds: mediaIds,
         mediaUrls,
-        ...(textChanged || emailSubjectChanged
+        ...(alwaysIncludeContent || textChanged || emailSubjectChanged
           ? {
               content: buildEditedPlatformContent(
                 content,
@@ -135,15 +138,15 @@ export function PublishSchedulePanel({ jobId, title, content }: PublishScheduleP
     try {
       const res = await createPost.mutateAsync({
         mode,
-        sourceType: "ai_generated",
-        jobId,
+        sourceType: canUseBackendJobId ? "ai_generated" : "manual_broadcast",
+        ...(canUseBackendJobId ? { jobId: normalizedJobId } : {}),
         title: title?.slice(0, 120) || "AI Campaign Post",
         timezone: userTimezone,
         ...(mode === "recommended" && recommendedWindow
           ? { recommendedPostingTime: recommendedWindow }
           : {}),
         ...(scheduledAtIso ? { scheduledAt: scheduledAtIso } : {}),
-        platforms: buildPlatformEntries(),
+        platforms: buildPlatformEntries(!canUseBackendJobId),
         mediaAssetIds: attachedMedia.map(getMediaAssetId).filter(Boolean),
         mediaUrls: attachedMedia.map((m) => m.url),
       });
@@ -296,7 +299,9 @@ export function PublishSchedulePanel({ jobId, title, content }: PublishScheduleP
           </p>
           {selectedPlatforms.map((platform) => (
             <div key={platform} className="space-y-1.5">
-              <Label htmlFor={`edit-${jobId}-${platform}`}>{platformLabel(platform)}</Label>
+              <Label htmlFor={`edit-${panelInstanceId}-${platform}`}>
+                {platformLabel(platform)}
+              </Label>
               {platform === "email" && (
                 <Input
                   aria-label="Email subject"
@@ -307,7 +312,7 @@ export function PublishSchedulePanel({ jobId, title, content }: PublishScheduleP
                 />
               )}
               <textarea
-                id={`edit-${jobId}-${platform}`}
+                id={`edit-${panelInstanceId}-${platform}`}
                 rows={3}
                 value={draftTexts[platform] ?? ""}
                 onChange={(e) => setDraftTexts((prev) => ({ ...prev, [platform]: e.target.value }))}
@@ -343,11 +348,11 @@ export function PublishSchedulePanel({ jobId, title, content }: PublishScheduleP
         {showCustomSchedule && (
           <div className="flex flex-wrap items-end gap-2">
             <div>
-              <Label htmlFor={`custom-dt-${jobId}`} className="text-xs">
+              <Label htmlFor={`custom-dt-${panelInstanceId}`} className="text-xs">
                 Date & Time ({userTimezone})
               </Label>
               <Input
-                id={`custom-dt-${jobId}`}
+                id={`custom-dt-${panelInstanceId}`}
                 type="datetime-local"
                 value={customDateTime}
                 onChange={(e) => setCustomDateTime(e.target.value)}

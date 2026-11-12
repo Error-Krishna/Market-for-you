@@ -239,3 +239,53 @@ test('publishPostNow returns 409 when active lock is held by scheduler worker', 
   assert.equal(res.statusCode, 409);
   assert.match(res.body.message, /already in progress/i);
 });
+
+test('createPost trims valid whitespace-padded jobId and rejects malformed jobId clearly', async () => {
+  const userId = '507f1f77bcf86cd799439011';
+  const validJobId = '507f1f77bcf86cd799439012';
+  mock.method(User, 'findById', async () => ({ _id: userId, timezone: 'UTC' }));
+
+  const badRes = mockRes();
+  await createPost({
+    user: { id: userId },
+    body: {
+      mode: 'now',
+      sourceType: 'ai_generated',
+      jobId: 'legacy-0',
+      platforms: ['email'],
+    },
+  }, badRes);
+  assert.equal(badRes.statusCode, 400);
+  assert.match(badRes.body.message, /Invalid content job ID/i);
+
+  mock.method(Job, 'findOne', async ({ _id }) => {
+    assert.equal(_id, validJobId);
+    return {
+      _id: validJobId,
+      userId,
+      status: 'completed',
+      originalContent: 'Weekly travel digest',
+      generatedContent: new Map([
+        ['email', { subject: 'Digest', body: 'Travel body' }],
+      ]),
+    };
+  });
+  mock.method(ScheduledPost, 'create', async (doc) => ({
+    ...doc,
+    _id: '607f1f77bcf86cd799439099',
+    async save() { return this; },
+  }));
+
+  const okRes = mockRes();
+  await createPost({
+    user: { id: userId },
+    body: {
+      mode: 'custom',
+      scheduledAt: new Date(Date.now() + 3600_000).toISOString(),
+      jobId: `  ${validJobId}  `,
+      platforms: ['email'],
+    },
+  }, okRes);
+  assert.equal(okRes.statusCode, 201);
+  assert.equal(okRes.body.success, true);
+});
