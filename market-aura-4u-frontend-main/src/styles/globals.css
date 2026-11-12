@@ -1,0 +1,77 @@
+@import "tailwindcss";
+@import "./tokens.css";
+
+@theme {
+  --color-primary: #6c3ce1;
+  --color-primary-soft: rgba(108, 60, 225, 0.12);
+  --color-secondary: #2dd4bf;
+  --color-secondary-soft: rgba(45, 212, 191, 0.12);
+  --color-background: #0b0a0f;
+  --color-surface: rgba(255, 255, 255, 0.04);
+  --color-surface-bright: rgba(255, 255, 255, 0.06);
+  --color-surface-muted: rgba(255, 255, 255, 0.02);
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-text: #f1f0f5;
+  --color-text-secondary: #b2b0c0;
+  --color-text-muted: #6f6c82;
+  --color-success: #2dd4bf;
+  --color-danger: #f87171;
+  --color-danger-soft: rgba(248, 113, 113, 0.12);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-text);
+    font-family:
+      "Inter",
+      system-ui,
+      -apple-system,
+      sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Glassmorphism – plain CSS (no @apply) */
+  .glass {
+    background: var(--glass-bg);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+  }
+
+  .glass-card {
+    background: var(--glass-bg);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    border-radius: 1rem;
+    box-shadow:
+      0 20px 25px -5px rgba(0, 0, 0, 0.1),
+      0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  }
+
+  .gradient-text {
+    background: var(--color-primary-gradient);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Step dots – now uses @apply with defined utilities */
+  .step-dot {
+    @apply h-3 w-3 rounded-full transition-all duration-300;
+  }
+  .step-dot.active {
+    @apply bg-primary scale-110 ring-2 ring-primary/40;
+  }
+  .step-dot.completed {
+    @apply bg-secondary;
+  }
+  .step-dot.inactive {
+    @apply bg-text-muted/30;
+  }
+}

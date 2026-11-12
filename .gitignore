@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Python virtualenvs & caches
+.venv/
+**/.venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+**/.pytest_cache/
+
+# Environment variables & secrets
+.env
+**/.env
+.env.local
+**/.env.local
+.env.*.local
+**/.env.*.local
+!.env.example
+!**/.env.example
+
+# Build outputs & runtime uploads
+dist/
+**/dist/
+dist-ssr/
+**/dist-ssr/
+build/
+**/build/
+coverage/
+**/coverage/
+*.lcov
+uploads/
+market-aura-4u-backend-main/uploads/
+
+# OS & editor files
+.DS_Store
+**/.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.log
+npm-debug.log*
+
+# Scratch / local workspace dumps
+project-content.txt
+BLUE_PRINT.previous.md

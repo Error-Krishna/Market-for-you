@@ -1,0 +1,273 @@
+===== AuthProvider.tsx =====
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+
+import {
+  getProfile,
+  login as loginRequest,
+  logout as logoutRequest,
+  signup as signupRequest,
+} from "@/features/auth/api/auth-api";
+
+import type { AuthUser, LoginRequest, SignupRequest } from "../types/auth.types";
+
+import { AuthContext } from "./auth-context";
+
+const TOKEN_KEY = "market-aura-auth-token";
+
+interface AuthProviderProps {
+  children: ReactNode;
+}
+
+export function AuthProvider({ children }: AuthProviderProps) {
+  const [user, setUser] = useState<AuthUser | null>(null);
+
+  const [isLoading, setIsLoading] = useState(() => {
+    return Boolean(localStorage.getItem(TOKEN_KEY));
+  });
+
+  /**
+   * Fetch the authenticated user's latest profile.
+   *
+   * This is important because onboarding status can change
+   * after the user completes onboarding.
+   */
+  const refreshProfile = useCallback(async () => {
+    try {
+      const response = await getProfile();
+
+      setUser({
+        id: response.data.id,
+        email: response.data.email,
+        isOnboarded: response.data.isOnboarded,
+        isPremium: response.data.isPremium,
+      });
+    } catch (error) {
+      console.error("Failed to refresh authentication profile:", error);
+
+      setUser(null);
+      localStorage.removeItem(TOKEN_KEY);
+    }
+  }, []);
+
+  /**
+   * Restore authentication state when the application starts.
+   */
+  useEffect(() => {
+    const token = localStorage.getItem(TOKEN_KEY);
+
+    if (!token) {
+      setIsLoading(false);
+      return;
+    }
+
+    const initializeAuth = async () => {
+      await refreshProfile();
+      setIsLoading(false);
+    };
+
+    void initializeAuth();
+  }, [refreshProfile]);
+
+  /**
+   * Login.
+   */
+  const login = useCallback(async (request: LoginRequest) => {
+    const response = await loginRequest(request);
+
+    localStorage.setItem(TOKEN_KEY, response.token);
+
+    setUser({
+      id: response.data.id,
+      email: response.data.email,
+      isOnboarded: response.data.isOnboarded,
+      isPremium: response.data.isPremium,
+    });
+
+    return {
+      id: response.data.id,
+      email: response.data.email,
+      isOnboarded: response.data.isOnboarded,
+      isPremium: response.data.isPremium,
+    };
+  }, []);
+
+  /**
+   * Signup.
+   */
+  const signup = useCallback(async (request: SignupRequest) => {
+    const response = await signupRequest(request);
+
+    localStorage.setItem(TOKEN_KEY, response.token);
+
+    setUser({
+      id: response.data.id,
+      email: response.data.email,
+      isOnboarded: response.data.isOnboarded,
+      isPremium: response.data.isPremium,
+    });
+
+    return {
+      id: response.data.id,
+      email: response.data.email,
+      isOnboarded: response.data.isOnboarded,
+      isPremium: response.data.isPremium,
+    };
+  }, []);
+
+  /**
+   * Logout.
+   */
+  const logout = useCallback(async () => {
+    try {
+      await logoutRequest();
+    } finally {
+      localStorage.removeItem(TOKEN_KEY);
+      setUser(null);
+    }
+  }, []);
+
+  const value = useMemo(
+    () => ({
+      user,
+      isAuthenticated: Boolean(user),
+      isLoading,
+      login,
+      signup,
+      logout,
+      refreshProfile,
+    }),
+    [user, isLoading, login, signup, logout, refreshProfile],
+  );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+===== auth-api.ts =====
+import { apiClient } from "@/lib/api/client";
+
+import type {
+  AuthResponse,
+  LoginRequest,
+  ProfileResponse,
+  SignupRequest,
+} from "../types/auth.types";
+
+const AUTH_BASE_PATH = "/v1/auth";
+
+export async function login(request: LoginRequest): Promise<AuthResponse> {
+  const response = await apiClient.post<AuthResponse>(`${AUTH_BASE_PATH}/login`, request);
+
+  return response.data;
+}
+
+export async function signup(request: SignupRequest): Promise<AuthResponse> {
+  const response = await apiClient.post<AuthResponse>(`${AUTH_BASE_PATH}/signup`, request);
+
+  return response.data;
+}
+
+export async function logout(): Promise<void> {
+  await apiClient.post(`${AUTH_BASE_PATH}/logout`);
+}
+
+export async function getProfile(): Promise<ProfileResponse> {
+  const response = await apiClient.get<ProfileResponse>(`${AUTH_BASE_PATH}/profile`);
+
+  return response.data;
+}
+
+===== auth.types.ts =====
+export interface AuthUser {
+  id: string;
+  email: string;
+  name?: string;
+  isOnboarded: boolean;
+  isPremium?: boolean; // add this
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface SignupRequest {
+  email: string;
+  password: string;
+}
+
+export interface AuthResponse {
+  message: string;
+  status: number;
+  token: string;
+  data: AuthUser & {
+    credits?: { remaining: number; used: number; total: number };
+    companyName?: string;
+    industry?: string;
+    brandVoice?: { tone: string };
+    marketingGoal?: string;
+    platforms?: string[];
+    isUserPremium?: boolean;
+  };
+}
+
+export interface ProfileResponse {
+  message: string;
+  status: number;
+  data: AuthUser & {
+    name?: string;
+    companyName?: string;
+    industry?: string;
+    brandVoice: { tone: string; description?: string };
+    marketingGoal?: string;
+    platforms: string[];
+    credits: { remaining: number; used: number; total: number };
+    isUserPremium: boolean;
+    onboardingCompleted: boolean;
+  };
+}
+
+===== OnboardingRoute.tsx =====
+import { Navigate, Outlet } from "react-router-dom";
+
+import { useAuth } from "@/features/auth/hooks/use-auth";
+
+export function OnboardingRoute() {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="size-6 animate-spin rounded-full border-2 border-border border-t-primary" />
+      </div>
+    );
+  }
+
+  if (user?.isOnboarded) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return <Outlet />;
+}
+
+===== ProtectedRoute.tsx =====
+import { Navigate, Outlet, useLocation } from "react-router-dom";
+
+import { useAuth } from "@/features/auth/hooks/use-auth";
+
+export function ProtectedRoute() {
+  const { isAuthenticated, isLoading } = useAuth();
+  const location = useLocation();
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="size-6 animate-spin rounded-full border-2 border-border border-t-primary" />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace state={{ from: location }} />;
+  }
+
+  return <Outlet />;
+}

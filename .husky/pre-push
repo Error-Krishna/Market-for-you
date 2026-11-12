@@ -1,0 +1,2 @@
+npm --prefix market-aura-4u-frontend-main test
+npm --prefix market-aura-4u-backend-main run test:ci
