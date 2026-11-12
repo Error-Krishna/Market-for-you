@@ -27,9 +27,46 @@ import {
   type MediaType,
 } from "@/features/media";
 import { extractApiErrorMessage } from "@/lib/api/error-message";
+import { useInView } from "@/lib/hooks/useInView";
+import { useDebounce } from "@/lib/hooks/useDebounce";
+
+function LazyMediaThumbnail({ asset }: { asset: MediaAsset }) {
+  const [ref, inView] = useInView<HTMLDivElement>({ rootMargin: "300px 0px", triggerOnce: true });
+
+  return (
+    <div
+      ref={ref}
+      className="aspect-video w-full bg-surface-bright overflow-hidden flex items-center justify-center relative"
+    >
+      {inView ? (
+        asset.mediaType === "video" ? (
+          <video src={asset.url} controls preload="none" className="h-full w-full object-cover" />
+        ) : (
+          <img
+            src={asset.url}
+            alt={asset.altText || asset.title}
+            loading="lazy"
+            decoding="async"
+            className="h-full w-full object-cover transition-opacity duration-300"
+          />
+        )
+      ) : (
+        <div className="flex flex-col items-center gap-1.5 text-text-muted">
+          {asset.mediaType === "video" ? (
+            <Film className="size-6 animate-pulse" />
+          ) : (
+            <ImageIcon className="size-6 animate-pulse" />
+          )}
+          <span className="text-[10px] font-medium tracking-wide uppercase">Preview deferred</span>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function MediaLibraryPage() {
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 300);
   const [filterType, setFilterType] = useState<MediaType | "">("");
 
   const {
@@ -38,7 +75,7 @@ export default function MediaLibraryPage() {
     isError,
     error,
   } = useMediaList({
-    q: search,
+    q: debouncedSearch,
     mediaType: filterType,
   });
   const createMedia = useCreateMedia();
@@ -366,17 +403,7 @@ export default function MediaLibraryPage() {
             return (
               <Card key={id} className="flex flex-col justify-between overflow-hidden p-0">
                 <div>
-                  <div className="aspect-video w-full bg-surface-bright overflow-hidden flex items-center justify-center">
-                    {asset.mediaType === "video" ? (
-                      <video src={asset.url} controls className="h-full w-full object-cover" />
-                    ) : (
-                      <img
-                        src={asset.url}
-                        alt={asset.altText || asset.title}
-                        className="h-full w-full object-cover"
-                      />
-                    )}
-                  </div>
+                  <LazyMediaThumbnail asset={asset} />
 
                   <div className="space-y-2 p-4">
                     <div className="flex items-start justify-between gap-2">

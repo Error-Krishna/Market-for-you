@@ -1,8 +1,8 @@
-import { zodResolver } from "@hookform/resolvers/zod";
-import { Eye, EyeOff, LockKeyhole, Mail } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Link, useNavigate } from "react-router-dom";
+import { AlertCircle, ArrowRight, Eye, EyeOff, LockKeyhole, Mail } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
@@ -34,45 +34,47 @@ export default function LoginPage() {
 
     try {
       const user = await login(data);
-
       navigate(user.isOnboarded ? "/dashboard" : "/onboarding", {
         replace: true,
       });
     } catch (error) {
       setServerError(
-        error instanceof Error ? error.message : "Unable to sign in. Please try again.",
+        error instanceof Error
+          ? error.message
+          : "Unable to sign in. Please verify your credentials.",
       );
     }
   };
 
   return (
-    <section className="w-full max-w-md">
+    <section className="w-full max-w-md animate-fade-in">
       <div className="mb-8 text-center">
-        <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-[var(--color-primary)] text-white shadow-lg shadow-[var(--color-primary)]/20">
-          <LockKeyhole className="size-5" />
+        <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-2xl bg-gradient-to-tr from-primary to-primary/80 text-white shadow-xl shadow-primary/20">
+          <LockKeyhole className="size-6" />
         </div>
 
-        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Welcome back</h1>
+        <h1 className="text-2xl font-extrabold tracking-tight sm:text-3xl text-text">
+          Welcome back
+        </h1>
 
-        <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
-          Sign in to continue to Market Aura.
-        </p>
+        <p className="mt-2 text-sm text-text-secondary">Sign in to your Market Aura 4U workspace</p>
       </div>
 
-      <Card>
-        <CardContent>
+      <Card className="border border-border/60 bg-surface/70 backdrop-blur-xl shadow-xl">
+        <CardContent className="p-6 sm:p-8">
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
             {serverError && (
               <div
                 role="alert"
-                className="rounded-xl border border-[var(--color-danger)]/20 bg-[var(--color-danger-soft)] px-4 py-3 text-sm text-[var(--color-danger)]"
+                className="flex items-start gap-2.5 rounded-xl border border-danger/30 bg-danger/10 p-3.5 text-xs text-danger"
               >
-                {serverError}
+                <AlertCircle className="size-4 shrink-0 mt-0.5" />
+                <span className="leading-relaxed">{serverError}</span>
               </div>
             )}
 
             <AuthFormField
-              label="Email"
+              label="Email Address"
               id="email"
               type="email"
               autoComplete="email"
@@ -94,7 +96,7 @@ export default function LoginPage() {
                   type="button"
                   aria-label={showPassword ? "Hide password" : "Show password"}
                   onClick={() => setShowPassword((value) => !value)}
-                  className="text-[var(--color-text-muted)] transition hover:text-[var(--color-text)]"
+                  className="text-text-muted transition hover:text-text focus:outline-none"
                 >
                   {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                 </button>
@@ -103,20 +105,23 @@ export default function LoginPage() {
               {...register("password")}
             />
 
-            <Button type="submit" fullWidth size="lg" isLoading={isSubmitting}>
-              Sign in
+            <Button
+              type="submit"
+              fullWidth
+              size="lg"
+              isLoading={isSubmitting}
+              rightIcon={!isSubmitting ? <ArrowRight className="size-4" /> : undefined}
+            >
+              Sign in to Workspace
             </Button>
           </form>
 
-          <p className="mt-6 text-center text-sm text-[var(--color-text-secondary)]">
+          <div className="mt-6 border-t border-border/40 pt-5 text-center text-sm text-text-secondary">
             Don't have an account?{" "}
-            <Link
-              to="/signup"
-              className="font-semibold text-[var(--color-primary)] hover:underline"
-            >
-              Create one
+            <Link to="/signup" className="font-semibold text-primary transition hover:underline">
+              Create one for free
             </Link>
-          </p>
+          </div>
         </CardContent>
       </Card>
     </section>

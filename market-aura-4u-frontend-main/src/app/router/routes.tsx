@@ -26,6 +26,7 @@ const BillingPage = lazy(() => import("@/pages/app/BillingPage"));
 const SocialAccountsPage = lazy(() => import("@/pages/app/SocialAccountsPage"));
 const MediaLibraryPage = lazy(() => import("@/pages/app/MediaLibraryPage"));
 const ScheduledPostsPage = lazy(() => import("@/pages/app/ScheduledPostsPage"));
+const SettingsPage = lazy(() => import("@/pages/app/SettingsPage"));
 
 function PageLoading() {
   return (
@@ -122,6 +123,10 @@ export const router = createBrowserRouter([
           {
             path: "/social-accounts",
             element: lazyElement(<SocialAccountsPage />),
+          },
+          {
+            path: "/settings",
+            element: lazyElement(<SettingsPage />),
           },
         ],
       },

@@ -2,6 +2,10 @@
   "name": "market-aura-development",
   "private": true,
   "type": "module",
+  "workspaces": [
+    "market-aura-4u-backend-main",
+    "market-aura-4u-frontend-main"
+  ],
   "scripts": {
     "dev": "concurrently \"npm --prefix market-aura-4u-backend-main start\" \"npm --prefix market-aura-4u-frontend-main run dev\" \"cd CAPSTONE && .venv/bin/python src/serve.py\"",
     "prepare": "husky",
@@ -12,7 +16,11 @@
     "test:frontend": "npm --prefix market-aura-4u-frontend-main test",
     "test:ml": "cd CAPSTONE && .venv/bin/python -m pytest -q tests/test_pipeline.py tests/test_serve.py",
     "test": "npm run test:backend && npm run test:frontend",
-    "build": "npm --prefix market-aura-4u-frontend-main run build"
+    "build": "npm --prefix market-aura-4u-frontend-main run build",
+    "docker:build": "docker compose build",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "verify:deployment": "node scripts/verify-deployment.js"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

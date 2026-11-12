@@ -11,6 +11,14 @@ const userSchema = new mongoose.Schema({
   isPremium: { type: Boolean, default: false },
   timezone: { type: String, default: 'UTC' },
 
+  settings: {
+    theme: { type: String, enum: ['light', 'dark', 'system'], default: 'system' },
+    notifications: {
+      emailAlerts: { type: Boolean, default: true },
+      weeklyDigest: { type: Boolean, default: false },
+    },
+  },
+
   credits: {
     monthly: { type: Number, default: 100 },
     used: { type: Number, default: 0 }
@@ -20,6 +28,7 @@ const userSchema = new mongoose.Schema({
   brandProfile: {
     companyName: { type: String, default: '' },
     industry: { type: String, default: '' },
+    description: { type: String, default: '' },
     uvp: { type: String, default: '' },
     targetAudience: { type: String, default: '' },
     marketingGoal: { type: String, default: '' },

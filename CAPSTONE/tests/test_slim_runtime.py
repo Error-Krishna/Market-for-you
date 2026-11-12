@@ -35,7 +35,7 @@ class SlimRuntimeTests(unittest.TestCase):
 
     def test_strips_only_elf_libraries_and_fails_on_strip_errors(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             library = root / "real.so.1"
             library.write_bytes(b"\x7fELFbinary")
             (root / "not-elf.so").write_bytes(b"text")

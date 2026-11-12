@@ -6,6 +6,14 @@ const unavailable = (feature) => (req, res) => res.status(403).json({
   message: `${feature} is unavailable in this MVP.`,
 });
 
-router.use(['/user/payment', '/payments'], unavailable('Payments and subscriptions'));
+router.use((req, res, next) => {
+  if (process.env.CHECKOUT_ENABLED === 'true') {
+    return next();
+  }
+  if (req.path.startsWith('/user/payment') || req.path.startsWith('/payments')) {
+    return unavailable('Payments and subscriptions')(req, res);
+  }
+  return next();
+});
 
 module.exports = router;

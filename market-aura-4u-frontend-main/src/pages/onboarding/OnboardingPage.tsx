@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Check } from "lucide-react";
+import { AlertCircle, ArrowRight, Briefcase, Check, Share2, Sparkles, Target } from "lucide-react";
 import { useForm, useWatch } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
 
@@ -19,13 +19,36 @@ import {
 } from "@/features/onboarding/schemas/onboarding.schemas";
 import { cn } from "@/lib/utils/cn";
 
-const platformLabels: Record<OnboardingPlatform, string> = {
-  twitter: "Twitter / X",
-  linkedin: "LinkedIn",
-  instagram: "Instagram",
-  facebook: "Facebook",
-  email: "Email",
-  blog: "Blog",
+interface PlatformMeta {
+  label: string;
+  desc: string;
+}
+
+const platformDetails: Record<OnboardingPlatform, PlatformMeta> = {
+  twitter: {
+    label: "X (Twitter)",
+    desc: "Short updates, thread hooks & conversational posts",
+  },
+  linkedin: {
+    label: "LinkedIn",
+    desc: "Thought leadership, B2B narratives & industry insights",
+  },
+  instagram: {
+    label: "Instagram",
+    desc: "Visual captions, carousel slides & engagement prompts",
+  },
+  facebook: {
+    label: "Facebook",
+    desc: "Community announcements & longer form stories",
+  },
+  email: {
+    label: "Email Newsletters",
+    desc: "Direct subscriber updates, promos & digests",
+  },
+  blog: {
+    label: "Blog / CMS",
+    desc: "SEO-friendly long-form articles & announcements",
+  },
 };
 
 export default function OnboardingPage() {
@@ -76,62 +99,93 @@ export default function OnboardingPage() {
       await refreshProfile();
       navigate("/dashboard", { replace: true });
     } catch (error) {
-      setServerError(error instanceof Error ? error.message : "Unable to complete onboarding.");
+      setServerError(
+        error instanceof Error ? error.message : "Unable to complete onboarding. Please try again.",
+      );
     }
   };
 
   return (
-    <main className="min-h-screen bg-background px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mx-auto w-full max-w-3xl">
-        <div className="mb-8">
-          <p className="text-sm font-semibold text-primary">Market Aura</p>
+    <main className="px-4 py-10 sm:px-6 lg:px-8">
+      <div className="mx-auto w-full max-w-3xl space-y-8 animate-fade-in">
+        {/* Header Intro */}
+        <div className="text-center sm:text-left space-y-3">
+          <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+            <Sparkles className="size-3.5" />
+            <span>Step 1 of 1 &bull; Personalize Your AI Brain</span>
+          </div>
 
-          <h1 className="mt-3 text-3xl font-bold tracking-tight text-text sm:text-4xl">
-            Set up your brand
+          <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-text">
+            Configure Your Brand Intelligence
           </h1>
 
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-text-secondary">
-            Tell us about your business so generated content can use your real brand information.
+          <p className="max-w-2xl text-sm sm:text-base leading-relaxed text-text-secondary">
+            Market Aura tailors every social post, hook, and carousel to your real brand
+            positioning, industry context, and tone of voice.
           </p>
         </div>
 
         <form
           onSubmit={handleSubmit(onSubmit)}
-          className="space-y-6 rounded-2xl border border-border bg-surface-bright p-5 shadow-sm sm:p-8"
+          className="space-y-8 rounded-3xl border border-border/60 bg-surface/70 p-6 sm:p-10 shadow-xl backdrop-blur-xl"
         >
-          <section className="space-y-5">
-            <div>
-              <h2 className="text-base font-semibold text-text">Business information</h2>
+          {serverError && (
+            <div
+              role="alert"
+              className="flex items-start gap-3 rounded-2xl border border-danger/30 bg-danger/10 p-4 text-sm text-danger"
+            >
+              <AlertCircle className="size-5 shrink-0 mt-0.5" />
+              <span>{serverError}</span>
+            </div>
+          )}
 
-              <p className="mt-1 text-sm text-text-secondary">
-                These values are saved to your account.
-              </p>
+          {/* Section 1: Business Identity */}
+          <section className="space-y-6">
+            <div className="flex items-center gap-2.5 pb-3 border-b border-border/40">
+              <div className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <Briefcase className="size-4" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-text">Business Identity</h2>
+                <p className="text-xs text-text-muted">
+                  Company name, market sector, and baseline tone
+                </p>
+              </div>
             </div>
 
             <div className="grid gap-5 sm:grid-cols-2">
-              <label className="space-y-2">
-                <span className="text-sm font-medium text-text">Company name</span>
-
+              <div className="space-y-2">
+                <label
+                  htmlFor="companyName"
+                  className="block text-xs font-semibold uppercase tracking-wider text-text-muted"
+                >
+                  Company or Brand Name <span className="text-danger">*</span>
+                </label>
                 <input
+                  id="companyName"
                   {...register("companyName")}
-                  placeholder="Acme Inc."
-                  className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm text-text outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
+                  placeholder="e.g. Market Aura, Apex Cloud"
+                  className="h-11 w-full rounded-xl border border-border bg-background px-3.5 text-sm text-text outline-none transition placeholder:text-text-muted focus:border-primary focus:ring-2 focus:ring-primary/20"
                 />
-
                 {errors.companyName && (
-                  <span className="text-xs text-danger">{errors.companyName.message}</span>
+                  <p className="text-xs text-danger">{errors.companyName.message}</p>
                 )}
-              </label>
+              </div>
 
-              <label className="space-y-2">
-                <span className="text-sm font-medium text-text">Industry</span>
-
+              <div className="space-y-2">
+                <label
+                  htmlFor="industry"
+                  className="block text-xs font-semibold uppercase tracking-wider text-text-muted"
+                >
+                  Industry / Sector <span className="text-danger">*</span>
+                </label>
                 <select
+                  id="industry"
                   {...register("industry")}
-                  className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm text-text outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
+                  className="h-11 w-full rounded-xl border border-border bg-background px-3.5 text-sm text-text outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
                 >
                   <option value="" disabled>
-                    Select an industry
+                    Select your industry
                   </option>
                   {ONBOARDING_INDUSTRIES.map((industry) => (
                     <option key={industry} value={industry}>
@@ -139,78 +193,110 @@ export default function OnboardingPage() {
                     </option>
                   ))}
                 </select>
-
                 {errors.industry && (
-                  <span className="text-xs text-danger">{errors.industry.message}</span>
+                  <p className="text-xs text-danger">{errors.industry.message}</p>
                 )}
-              </label>
+              </div>
 
-              <label className="space-y-2 sm:col-span-2">
-                <span className="text-sm font-medium text-text">Brand tone</span>
-
-                <select
-                  {...register("brandTone")}
-                  className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm text-text outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
+              <div className="space-y-2 sm:col-span-2">
+                <label
+                  htmlFor="brandTone"
+                  className="block text-xs font-semibold uppercase tracking-wider text-text-muted"
                 >
-                  <option value="Professional">Professional</option>
-                  <option value="Friendly">Friendly</option>
-                  <option value="Playful">Playful</option>
-                  <option value="Bold">Bold</option>
-                  <option value="Inspirational">Inspirational</option>
-                  <option value="Casual">Casual</option>
+                  Primary Brand Tone <span className="text-danger">*</span>
+                </label>
+                <select
+                  id="brandTone"
+                  {...register("brandTone")}
+                  className="h-11 w-full rounded-xl border border-border bg-background px-3.5 text-sm text-text outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+                >
+                  <option value="Professional">
+                    Professional (Authoritative, clear, corporate)
+                  </option>
+                  <option value="Friendly">Friendly (Approachable, warm, conversational)</option>
+                  <option value="Playful">Playful (Witty, energetic, engaging)</option>
+                  <option value="Bold">Bold (Provocative, punchy, confident)</option>
+                  <option value="Inspirational">
+                    Inspirational (Uplifting, visionary, motivating)
+                  </option>
+                  <option value="Casual">Casual (Relaxed, genuine, straightforward)</option>
                 </select>
-
                 {errors.brandTone && (
-                  <span className="text-xs text-danger">{errors.brandTone.message}</span>
+                  <p className="text-xs text-danger">{errors.brandTone.message}</p>
                 )}
-              </label>
+              </div>
             </div>
           </section>
 
-          <section className="space-y-5 border-t border-border pt-6">
-            <div>
-              <h2 className="text-base font-semibold text-text">Your audience and positioning</h2>
+          {/* Section 2: Positioning & Audience */}
+          <section className="space-y-6 pt-4 border-t border-border/40">
+            <div className="flex items-center gap-2.5 pb-3 border-b border-border/40">
+              <div className="flex size-8 items-center justify-center rounded-lg bg-sky-500/10 text-sky-500">
+                <Target className="size-4" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-text">Positioning &amp; Audience</h2>
+                <p className="text-xs text-text-muted">What makes you unique and whom you serve</p>
+              </div>
             </div>
 
-            <label className="block space-y-2">
-              <span className="text-sm font-medium text-text">Unique value proposition</span>
+            <div className="space-y-5">
+              <div className="space-y-2">
+                <label
+                  htmlFor="uvp"
+                  className="block text-xs font-semibold uppercase tracking-wider text-text-muted"
+                >
+                  Unique Value Proposition (UVP) <span className="text-danger">*</span>
+                </label>
+                <textarea
+                  id="uvp"
+                  {...register("uvp")}
+                  rows={3}
+                  placeholder="e.g. The all-in-one AI platform that creates, optimizes, and auto-schedules high-converting multi-channel marketing campaigns."
+                  className="w-full resize-y rounded-xl border border-border bg-background p-3.5 text-sm text-text outline-none transition placeholder:text-text-muted focus:border-primary focus:ring-2 focus:ring-primary/20"
+                />
+                {errors.uvp && <p className="text-xs text-danger">{errors.uvp.message}</p>}
+              </div>
 
-              <textarea
-                {...register("uvp")}
-                rows={4}
-                placeholder="What makes your brand different?"
-                className="w-full resize-y rounded-xl border border-border bg-background px-3 py-3 text-sm text-text outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
-              />
-
-              {errors.uvp && <span className="text-xs text-danger">{errors.uvp.message}</span>}
-            </label>
-
-            <label className="block space-y-2">
-              <span className="text-sm font-medium text-text">Target audience</span>
-
-              <textarea
-                {...register("targetAudience")}
-                rows={4}
-                placeholder="Who do you want to reach?"
-                className="w-full resize-y rounded-xl border border-border bg-background px-3 py-3 text-sm text-text outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
-              />
-
-              {errors.targetAudience && (
-                <span className="text-xs text-danger">{errors.targetAudience.message}</span>
-              )}
-            </label>
+              <div className="space-y-2">
+                <label
+                  htmlFor="targetAudience"
+                  className="block text-xs font-semibold uppercase tracking-wider text-text-muted"
+                >
+                  Target Audience Description <span className="text-danger">*</span>
+                </label>
+                <textarea
+                  id="targetAudience"
+                  {...register("targetAudience")}
+                  rows={3}
+                  placeholder="e.g. Founders, marketing teams, agency creators, and growth leads looking to scale their social footprint without endless manual drafting."
+                  className="w-full resize-y rounded-xl border border-border bg-background p-3.5 text-sm text-text outline-none transition placeholder:text-text-muted focus:border-primary focus:ring-2 focus:ring-primary/20"
+                />
+                {errors.targetAudience && (
+                  <p className="text-xs text-danger">{errors.targetAudience.message}</p>
+                )}
+              </div>
+            </div>
           </section>
 
-          <section className="border-t border-border pt-6">
-            <div>
-              <h2 className="text-base font-semibold text-text">Content platforms</h2>
-
-              <p className="mt-1 text-sm text-text-secondary">Select where you plan to publish.</p>
+          {/* Section 3: Distribution Platforms */}
+          <section className="space-y-6 pt-4 border-t border-border/40">
+            <div className="flex items-center gap-2.5 pb-3 border-b border-border/40">
+              <div className="flex size-8 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-500">
+                <Share2 className="size-4" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-text">Active Distribution Channels</h2>
+                <p className="text-xs text-text-muted">
+                  Select the platforms you plan to generate and schedule content for
+                </p>
+              </div>
             </div>
 
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {ONBOARDING_PLATFORMS.map((platform) => {
                 const selected = platforms.includes(platform);
+                const info = platformDetails[platform];
 
                 return (
                   <button
@@ -218,41 +304,52 @@ export default function OnboardingPage() {
                     type="button"
                     onClick={() => togglePlatform(platform)}
                     className={cn(
-                      "flex min-h-12 items-center justify-between rounded-xl border px-4 text-left text-sm font-medium transition",
+                      "flex flex-col justify-between rounded-2xl border p-4 text-left transition duration-200 group relative",
                       selected
-                        ? "border-primary bg-primary-soft text-primary"
-                        : "border-border bg-background text-text-secondary hover:border-border-strong hover:text-text",
+                        ? "border-primary bg-primary/10 text-text shadow-sm shadow-primary/10"
+                        : "border-border/60 bg-surface-bright/30 text-text-secondary hover:border-border hover:bg-surface-bright/70 hover:text-text",
                     )}
                   >
-                    {platformLabels[platform]}
-
-                    {selected && (
-                      <span className="flex size-5 items-center justify-center rounded-full bg-primary text-white">
+                    <div className="flex items-center justify-between w-full">
+                      <span className="font-semibold text-sm text-text">{info.label}</span>
+                      <span
+                        className={cn(
+                          "flex size-5 items-center justify-center rounded-full border transition",
+                          selected
+                            ? "border-primary bg-primary text-white"
+                            : "border-border bg-surface text-transparent",
+                        )}
+                      >
                         <Check className="size-3" />
                       </span>
-                    )}
+                    </div>
+                    <p className="mt-2 text-xs text-text-muted leading-relaxed line-clamp-2">
+                      {info.desc}
+                    </p>
                   </button>
                 );
               })}
             </div>
 
             {errors.platforms && (
-              <p className="mt-2 text-xs text-danger">{errors.platforms.message}</p>
+              <p className="text-xs text-danger font-medium">{errors.platforms.message}</p>
             )}
           </section>
 
-          {serverError && (
-            <div
-              role="alert"
-              className="rounded-xl border border-danger/20 bg-danger/5 px-4 py-3 text-sm text-danger"
-            >
-              {serverError}
-            </div>
-          )}
+          {/* Form Actions */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-border/40 pt-6">
+            <p className="text-xs text-text-muted text-center sm:text-left">
+              You can adjust all of these settings at any time in your Workspace Settings.
+            </p>
 
-          <div className="flex justify-end border-t border-border pt-6">
-            <Button type="submit" size="lg" isLoading={onboarding.isPending}>
-              Complete setup
+            <Button
+              type="submit"
+              size="lg"
+              isLoading={onboarding.isPending}
+              rightIcon={!onboarding.isPending ? <ArrowRight className="size-4" /> : undefined}
+              className="w-full sm:w-auto"
+            >
+              Complete Setup &amp; Launch
             </Button>
           </div>
         </form>

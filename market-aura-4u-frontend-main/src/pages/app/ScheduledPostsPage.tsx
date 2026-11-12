@@ -32,6 +32,7 @@ import {
 } from "@/features/posts";
 import { platformLabel } from "@/features/posts/content-helpers";
 import { extractApiErrorMessage } from "@/lib/api/error-message";
+import { VirtualCard } from "@/components/ui/VirtualCard";
 
 const STATUS_TABS: Array<{ value: string; label: string }> = [
   { value: "", label: "All" },
@@ -262,160 +263,162 @@ export default function ScheduledPostsPage() {
             const formattedDate = new Date(post.scheduledAt).toLocaleString();
 
             return (
-              <Card key={id} className="space-y-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="text-lg font-semibold">{post.title}</h2>
-                      <span
-                        className={`rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${statusBadgeClass(post.status)}`}
-                      >
-                        {post.status}
-                      </span>
-                      <span className="rounded-full bg-surface-bright px-2.5 py-0.5 text-[11px] text-text-secondary">
-                        {post.sourceType === "ai_generated" ? "AI Generated" : "Manual Broadcast"}
-                      </span>
-                      {post.recommendedTimeUsed && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2.5 py-0.5 text-[11px] font-medium text-primary">
-                          <Sparkles className="size-3" />
-                          ML Recommended Time
+              <VirtualCard key={id} estimatedHeight={180}>
+                <Card className="space-y-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h2 className="text-lg font-semibold">{post.title}</h2>
+                        <span
+                          className={`rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${statusBadgeClass(post.status)}`}
+                        >
+                          {post.status}
                         </span>
-                      )}
+                        <span className="rounded-full bg-surface-bright px-2.5 py-0.5 text-[11px] text-text-secondary">
+                          {post.sourceType === "ai_generated" ? "AI Generated" : "Manual Broadcast"}
+                        </span>
+                        {post.recommendedTimeUsed && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2.5 py-0.5 text-[11px] font-medium text-primary">
+                            <Sparkles className="size-3" />
+                            ML Recommended Time
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="text-xs text-text-secondary">
+                        Scheduled for: <strong>{formattedDate}</strong> ({post.timezone || "UTC"})
+                      </p>
                     </div>
 
-                    <p className="text-xs text-text-secondary">
-                      Scheduled for: <strong>{formattedDate}</strong> ({post.timezone || "UTC"})
-                    </p>
-                  </div>
+                    <div className="flex flex-wrap gap-2">
+                      {post.status === "scheduled" && (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="primary"
+                            leftIcon={<Send className="size-3.5" />}
+                            onClick={() => handlePublishNow(id)}
+                            isLoading={publishNow.isPending && publishNow.variables === id}
+                          >
+                            Post Now
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            leftIcon={<Edit2 className="size-3.5" />}
+                            onClick={() => (isEditing ? setEditingId(null) : startEdit(post))}
+                          >
+                            {isEditing ? "Close" : "Reschedule"}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            leftIcon={<Ban className="size-3.5" />}
+                            onClick={() => handleCancel(id)}
+                            isLoading={cancelPost.isPending && cancelPost.variables === id}
+                          >
+                            Cancel
+                          </Button>
+                        </>
+                      )}
 
-                  <div className="flex flex-wrap gap-2">
-                    {post.status === "scheduled" && (
-                      <>
-                        <Button
-                          size="sm"
-                          variant="primary"
-                          leftIcon={<Send className="size-3.5" />}
-                          onClick={() => handlePublishNow(id)}
-                          isLoading={publishNow.isPending && publishNow.variables === id}
-                        >
-                          Post Now
-                        </Button>
+                      {(post.status === "failed" || post.status === "partial") && (
                         <Button
                           size="sm"
                           variant="outline"
-                          leftIcon={<Edit2 className="size-3.5" />}
-                          onClick={() => (isEditing ? setEditingId(null) : startEdit(post))}
+                          leftIcon={<RotateCcw className="size-3.5" />}
+                          onClick={() => handleRetry(id)}
+                          isLoading={retryFailed.isPending && retryFailed.variables === id}
                         >
-                          {isEditing ? "Close" : "Reschedule"}
+                          Retry Failed
                         </Button>
+                      )}
+
+                      {post.status !== "processing" && (
                         <Button
                           size="sm"
                           variant="ghost"
-                          leftIcon={<Ban className="size-3.5" />}
-                          onClick={() => handleCancel(id)}
-                          isLoading={cancelPost.isPending && cancelPost.variables === id}
+                          aria-label={`Delete ${post.title}`}
+                          onClick={() => handleDelete(id)}
+                          isLoading={deletePost.isPending && deletePost.variables === id}
                         >
-                          Cancel
+                          <Trash2 className="size-4 text-danger" />
                         </Button>
-                      </>
-                    )}
-
-                    {(post.status === "failed" || post.status === "partial") && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        leftIcon={<RotateCcw className="size-3.5" />}
-                        onClick={() => handleRetry(id)}
-                        isLoading={retryFailed.isPending && retryFailed.variables === id}
-                      >
-                        Retry Failed
-                      </Button>
-                    )}
-
-                    {post.status !== "processing" && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        aria-label={`Delete ${post.title}`}
-                        onClick={() => handleDelete(id)}
-                        isLoading={deletePost.isPending && deletePost.variables === id}
-                      >
-                        <Trash2 className="size-4 text-danger" />
-                      </Button>
-                    )}
-                  </div>
-                </div>
-
-                {isEditing && (
-                  <div className="grid gap-3 rounded-xl border border-border/60 bg-surface-bright/40 p-4 sm:grid-cols-[1fr_auto_auto] sm:items-end">
-                    <div>
-                      <Label htmlFor={`edit-title-${id}`}>Post Title</Label>
-                      <Input
-                        id={`edit-title-${id}`}
-                        value={editTitle}
-                        onChange={(e) => setEditTitle(e.target.value)}
-                      />
+                      )}
                     </div>
-                    <div>
-                      <Label htmlFor={`edit-dt-${id}`}>New Schedule Time</Label>
-                      <Input
-                        id={`edit-dt-${id}`}
-                        type="datetime-local"
-                        value={editDateTime}
-                        onChange={(e) => setEditDateTime(e.target.value)}
-                      />
-                    </div>
-                    <Button
-                      size="sm"
-                      onClick={() => handleSaveEdit(post)}
-                      isLoading={updatePost.isPending}
-                    >
-                      Save Schedule
-                    </Button>
                   </div>
-                )}
 
-                {/* Per-platform delivery matrix */}
-                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {post.platforms.map((entry) => (
-                    <div
-                      key={entry.platform}
-                      className="rounded-xl border border-border/50 bg-surface-bright/30 p-3 text-xs space-y-1.5"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-semibold">{platformLabel(entry.platform)}</span>
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ${statusBadgeClass(entry.status)}`}
-                        >
-                          {entry.status}
-                        </span>
+                  {isEditing && (
+                    <div className="grid gap-3 rounded-xl border border-border/60 bg-surface-bright/40 p-4 sm:grid-cols-[1fr_auto_auto] sm:items-end">
+                      <div>
+                        <Label htmlFor={`edit-title-${id}`}>Post Title</Label>
+                        <Input
+                          id={`edit-title-${id}`}
+                          value={editTitle}
+                          onChange={(e) => setEditTitle(e.target.value)}
+                        />
                       </div>
-
-                      {entry.externalPostUrl && (
-                        <a
-                          href={entry.externalPostUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1 text-primary underline"
-                        >
-                          View Published Post
-                          <ExternalLink className="size-3" />
-                        </a>
-                      )}
-
-                      {entry.lastError && (
-                        <p className="text-danger leading-snug">{entry.lastError}</p>
-                      )}
-
-                      {Array.isArray(entry.mediaUrls) && entry.mediaUrls.length > 0 && (
-                        <p className="text-[11px] text-text-muted">
-                          {entry.mediaUrls.length} media attachment(s)
-                        </p>
-                      )}
+                      <div>
+                        <Label htmlFor={`edit-dt-${id}`}>New Schedule Time</Label>
+                        <Input
+                          id={`edit-dt-${id}`}
+                          type="datetime-local"
+                          value={editDateTime}
+                          onChange={(e) => setEditDateTime(e.target.value)}
+                        />
+                      </div>
+                      <Button
+                        size="sm"
+                        onClick={() => handleSaveEdit(post)}
+                        isLoading={updatePost.isPending}
+                      >
+                        Save Schedule
+                      </Button>
                     </div>
-                  ))}
-                </div>
-              </Card>
+                  )}
+
+                  {/* Per-platform delivery matrix */}
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    {post.platforms.map((entry) => (
+                      <div
+                        key={entry.platform}
+                        className="rounded-xl border border-border/50 bg-surface-bright/30 p-3 text-xs space-y-1.5"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-semibold">{platformLabel(entry.platform)}</span>
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ${statusBadgeClass(entry.status)}`}
+                          >
+                            {entry.status}
+                          </span>
+                        </div>
+
+                        {entry.externalPostUrl && (
+                          <a
+                            href={entry.externalPostUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 text-primary underline"
+                          >
+                            View Published Post
+                            <ExternalLink className="size-3" />
+                          </a>
+                        )}
+
+                        {entry.lastError && (
+                          <p className="text-danger leading-snug">{entry.lastError}</p>
+                        )}
+
+                        {Array.isArray(entry.mediaUrls) && entry.mediaUrls.length > 0 && (
+                          <p className="text-[11px] text-text-muted">
+                            {entry.mediaUrls.length} media attachment(s)
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              </VirtualCard>
             );
           })}
         </div>

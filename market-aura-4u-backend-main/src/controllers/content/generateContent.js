@@ -54,6 +54,16 @@ const generateContent = async (req, res) => {
       ? user.brandProfile.platforms
       : ['instagram', 'twitter'];
 
+    const monthlyCredits = Number.isFinite(user.credits?.monthly) ? user.credits.monthly : 100;
+    const usedCredits = Number.isFinite(user.credits?.used) ? user.credits.used : 0;
+    if (monthlyCredits - usedCredits <= 0) {
+      return res.status(402).json({
+        success: false,
+        code: 'INSUFFICIENT_CREDITS',
+        message: 'You have exhausted your generation credits. Please upgrade your subscription or wait for monthly renewal.',
+      });
+    }
+
     reservation = generationLimiter.acquire(userId);
     if (!reservation.allowed) {
       const messages = {
@@ -135,6 +145,21 @@ const generateContent = async (req, res) => {
       generatedContent: generatedContent,
       completedAt: new Date()
     }, { new: true });
+
+    // Atomically debit 1 credit for completed generation when database is connected
+    try {
+      if (typeof User.findByIdAndUpdate === 'function') {
+        const updatePromise = User.findByIdAndUpdate(userId, { $inc: { 'credits.used': 1 } });
+        if (updatePromise && typeof updatePromise.catch === 'function') {
+          // Do not await if disconnected to prevent Mongoose command buffering hang
+          if (require('mongoose').connection?.readyState === 1) {
+            await updatePromise;
+          }
+        }
+      }
+    } catch {
+      // Credit debit log failure does not abort response
+    }
 
     res.status(200).json({
       success: true,
@@ -332,8 +357,6 @@ const callAIAndGenerateContent = async (userPrompt, user, platforms, recommendat
     --- 1. BRAND INTELLIGENCE ---
     INDUSTRY: ${brandProfile.industry || 'General Business'}
     TARGET AUDIENCE: ${targetAudienceStr}
-       - Their Pain Point: "${brandProfile.targetAudience?.painPoint || ''}"
-       - Their Desire: "${brandProfile.targetAudience?.desire || ''}"
     UNIQUE VALUE PROPOSITION (UVP): "${brandProfile.uvp || ''}"
     BRAND VOICE: ${brandProfile.brandVoice?.tone || 'Professional'}
     EXTRA VOICE RULES: ${brandProfile.brandVoice?.description || 'Be human and engaging.'}

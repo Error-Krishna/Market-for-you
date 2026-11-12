@@ -48,9 +48,11 @@ const User = require('../src/models/User');
 const Job = require('../src/models/Job');
 const { generateContent } = require('../src/controllers/content/generateContent');
 
-const PYTHON_EXECUTABLE = path.resolve(__dirname, '../../code/paper/.venv/Scripts/python.exe');
-const PYTHON_SERVE_SCRIPT = path.resolve(__dirname, '../../code/paper/src/serve.py');
-const PYTHON_CWD = path.resolve(__dirname, '../../code/paper');
+const PYTHON_EXECUTABLE = process.platform === 'win32'
+  ? path.resolve(__dirname, '../../CAPSTONE/.venv/Scripts/python.exe')
+  : path.resolve(__dirname, '../../CAPSTONE/.venv/bin/python');
+const PYTHON_SERVE_SCRIPT = path.resolve(__dirname, '../../CAPSTONE/src/serve.py');
+const PYTHON_CWD = path.resolve(__dirname, '../../CAPSTONE');
 const TEST_PORT = 8001;
 
 describe('End-to-End Node.js <-> Python Live Recommendation Integration', () => {
