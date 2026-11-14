@@ -17,6 +17,8 @@ jobs:
   frontend:
     name: Frontend (Typecheck, Lint, Test, Build)
     runs-on: ubuntu-latest
+    env:
+      VITE_API_URL: http://127.0.0.1:8000/api
     defaults:
       run:
         working-directory: market-aura-4u-frontend-main
@@ -28,12 +30,12 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version-file: .node-version
           cache: npm
-          cache-dependency-path: market-aura-4u-frontend-main/package-lock.json
 
-      - name: Install frontend dependencies
-        run: npm ci
+      - name: Install workspace dependencies
+        working-directory: .
+        run: npm ci --engine-strict
 
       - name: TypeScript typecheck
         run: npm run typecheck
@@ -61,18 +63,11 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version-file: .node-version
           cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            market-aura-4u-backend-main/package-lock.json
 
-      - name: Install root tooling dependencies
-        run: npm ci
-
-      - name: Install backend dependencies
-        working-directory: market-aura-4u-backend-main
-        run: npm ci
+      - name: Install workspace dependencies
+        run: npm ci --engine-strict
 
       - name: Lint backend JavaScript
         run: npm run lint:backend

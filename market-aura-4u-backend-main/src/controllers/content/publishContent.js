@@ -59,6 +59,7 @@ const publishContent = async (req, res) => {
         scheduledAt: new Date(),
         timezone: user.timezone || 'UTC',
         status: 'processing',
+        lockUntil: new Date(Date.now() + 2 * 60 * 1000),
         platforms: deliveries,
       });
 

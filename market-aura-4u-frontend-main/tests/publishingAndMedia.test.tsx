@@ -66,6 +66,7 @@ vi.mock("@/features/media", () => ({
 }));
 
 vi.mock("@/features/posts/usePosts", () => ({
+  useResolveDelivery: () => ({ mutate: vi.fn(), isPending: false }),
   useCreatePost: () => ({ mutateAsync: createPostMutateAsync, isPending: false }),
   useUpdatePost: () => ({ mutateAsync: updatePostMutateAsync, isPending: false }),
   usePublishPostNow: () => ({
@@ -113,6 +114,22 @@ vi.mock("@/features/posts/usePosts", () => ({
         updatedAt: "2026-11-10T10:00:00.000Z",
       },
       {
+        _id: "post-unknown",
+        userId: "user-1",
+        sourceType: "manual_broadcast",
+        title: "Uncertain delivery",
+        scheduledAt: "2026-11-11T10:00:00.000Z",
+        timezone: "UTC",
+        recommendedTimeUsed: false,
+        status: "failed",
+        deliveryOutcomeUnknown: true,
+        platforms: [
+          { platform: "email", content: ["Test"], status: "failed", outcomeUnknown: true },
+        ],
+        createdAt: "2026-11-11T09:50:00.000Z",
+        updatedAt: "2026-11-11T10:00:05.000Z",
+      },
+      {
         _id: "post-2",
         userId: "user-1",
         jobId: null,
@@ -140,7 +157,7 @@ vi.mock("@/features/posts/usePosts", () => ({
             status: "failed",
             attempts: 1,
             lastError: "Rate limited by X API",
-            retryable: true,
+            retryable: false,
             externalPostId: null,
             externalPostUrl: null,
             publishedAt: null,
@@ -312,6 +329,8 @@ test("ScheduledPostsPage shows scheduled & partial posts with Post Now and Retry
   expect(screen.getByText("ML Recommended Time")).toBeTruthy();
   expect(screen.getByText("Partial Failure Broadcast")).toBeTruthy();
   expect(screen.getByText("Rate limited by X API")).toBeTruthy();
+  expect(screen.getByRole("region", { name: "Review delivery outcomes" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Delete Uncertain delivery" })).toBeNull();
 
   fireEvent.click(screen.getByRole("button", { name: /Post Now/i }));
   await waitFor(() => expect(publishNowMutateAsync).toHaveBeenCalledWith("post-1"));

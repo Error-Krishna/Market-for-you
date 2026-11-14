@@ -23,6 +23,8 @@ const platformDeliverySchema = new mongoose.Schema({
   attempts: { type: Number, default: 0 },
   lastError: { type: String, default: null },
   retryable: { type: Boolean, default: false },
+  outcomeUnknown: { type: Boolean, default: false },
+  outcomeReviewedAt: { type: Date, default: null },
   externalPostId: { type: String, default: null },
   externalPostUrl: { type: String, default: null },
   publishedAt: { type: Date, default: null },
@@ -67,9 +69,11 @@ const scheduledPostSchema = new mongoose.Schema({
   retryCount: { type: Number, default: 0 },
   maxRetries: { type: Number, default: 3 },
   nextRetryAt: { type: Date, default: null },
+  deliveryOutcomeUnknown: { type: Boolean, default: false },
   lastRunAt: { type: Date, default: null },
 }, {
   timestamps: true,
+  optimisticConcurrency: true,
   toJSON: {
     virtuals: true,
     transform: (_doc, ret) => {

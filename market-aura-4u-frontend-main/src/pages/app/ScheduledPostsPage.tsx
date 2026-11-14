@@ -33,6 +33,7 @@ import {
 import { platformLabel } from "@/features/posts/content-helpers";
 import { extractApiErrorMessage } from "@/lib/api/error-message";
 import { VirtualCard } from "@/components/ui/VirtualCard";
+import { DeliveryReview } from "@/features/posts/DeliveryReview";
 
 const STATUS_TABS: Array<{ value: string; label: string }> = [
   { value: "", label: "All" },
@@ -260,6 +261,9 @@ export default function ScheduledPostsPage() {
           {posts.map((post) => {
             const id = getScheduledPostId(post);
             const isEditing = editingId === id;
+            const needsReview =
+              post.deliveryOutcomeUnknown ||
+              post.platforms.some((entry) => entry.outcomeUnknown || entry.retryable);
             const formattedDate = new Date(post.scheduledAt).toLocaleString();
 
             return (
@@ -291,7 +295,7 @@ export default function ScheduledPostsPage() {
                     </div>
 
                     <div className="flex flex-wrap gap-2">
-                      {post.status === "scheduled" && (
+                      {post.status === "scheduled" && !needsReview && (
                         <>
                           <Button
                             size="sm"
@@ -322,7 +326,7 @@ export default function ScheduledPostsPage() {
                         </>
                       )}
 
-                      {(post.status === "failed" || post.status === "partial") && (
+                      {(post.status === "failed" || post.status === "partial") && !needsReview && (
                         <Button
                           size="sm"
                           variant="outline"
@@ -334,7 +338,7 @@ export default function ScheduledPostsPage() {
                         </Button>
                       )}
 
-                      {post.status !== "processing" && (
+                      {post.status !== "processing" && !needsReview && (
                         <Button
                           size="sm"
                           variant="ghost"
@@ -376,6 +380,8 @@ export default function ScheduledPostsPage() {
                       </Button>
                     </div>
                   )}
+
+                  {needsReview && <DeliveryReview post={post} />}
 
                   {/* Per-platform delivery matrix */}
                   <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">

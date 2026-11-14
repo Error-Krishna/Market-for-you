@@ -6,12 +6,29 @@ import {
   listPosts,
   publishPostNow,
   retryFailedPost,
+  resolveDelivery,
   updatePost,
   type ListPostsParams,
 } from "./posts-api";
 import type { CreatePostPayload, UpdatePostPayload } from "./posts.types";
 
 export const POSTS_QUERY_KEY = ["scheduledPosts"];
+
+export function useResolveDelivery() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      platformIndex,
+      outcome,
+    }: {
+      id: string;
+      platformIndex: number;
+      outcome: "published" | "not_published";
+    }) => resolveDelivery(id, platformIndex, outcome),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: POSTS_QUERY_KEY }),
+  });
+}
 
 export function useScheduledPosts(params?: ListPostsParams) {
   return useQuery({

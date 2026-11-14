@@ -98,7 +98,7 @@ test('createPost schedules AI content at ML recommended posting time', async () 
   assert.equal(savedDoc.scheduledAt.getUTCHours(), 14);
 });
 
-test('executePostDelivery isolates partial platform failures and schedules retry for transient errors', async () => {
+test('executePostDelivery isolates partial platform failures and requires review for transient errors', async () => {
   const userId = '507f1f77bcf86cd799439011';
   const user = {
     _id: userId,
@@ -150,9 +150,11 @@ test('executePostDelivery isolates partial platform failures and schedules retry
   assert.equal(post.platforms[0].externalPostUrl, 'https://x.com/i/web/status/tweet_999');
 
   assert.equal(post.platforms[1].status, 'failed');
-  assert.equal(post.platforms[1].retryable, true);
-  assert.equal(post.retryCount, 1);
-  assert.ok(post.nextRetryAt instanceof Date);
+  assert.equal(post.platforms[1].retryable, false);
+  assert.equal(post.platforms[1].outcomeUnknown, true);
+  assert.equal(post.deliveryOutcomeUnknown, true);
+  assert.equal(post.retryCount, 0);
+  assert.equal(post.nextRetryAt, null);
 });
 
 test('createPost supports manual_broadcast with attached MediaAsset and immediate delivery', async () => {
