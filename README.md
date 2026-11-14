@@ -13,12 +13,11 @@ A unified digital marketing workspace combining brand-grounded AI content genera
 1. Configure environment files:
    - Copy `market-aura-4u-backend-main/.env.example` to `market-aura-4u-backend-main/.env` and populate MongoDB, JWT, Groq, `TOKEN_ENCRYPTION_KEY`, and OAuth credentials.
    - Ensure `CAPSTONE/.venv` has Python dependencies installed (`pip install -r CAPSTONE/requirements-prod.txt`).
-2. Install dependencies:
+2. Use the Node version in `.node-version` and install workspace dependencies from the repository root:
    ```bash
-   npm install
-   npm --prefix market-aura-4u-backend-main install
-   npm --prefix market-aura-4u-frontend-main install
+   npm ci --engine-strict
    ```
+   CI and local workspace installs use the root `package-lock.json`. The lockfiles in the frontend and backend directories serve standalone builds, including their Dockerfiles.
 3. Run all three services concurrently:
    ```bash
    npm run dev

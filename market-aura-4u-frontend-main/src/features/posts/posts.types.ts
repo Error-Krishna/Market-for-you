@@ -18,6 +18,7 @@ export interface PlatformDelivery {
   attempts: number;
   lastError: string | null;
   retryable: boolean;
+  outcomeUnknown?: boolean;
   externalPostId: string | null;
   externalPostUrl: string | null;
   publishedAt: string | null;
@@ -35,6 +36,7 @@ export interface ScheduledPost {
   recommendedTimeUsed: boolean;
   status: ScheduledPostStatus;
   platforms: PlatformDelivery[];
+  deliveryOutcomeUnknown?: boolean;
   createdAt: string;
   updatedAt: string;
 }
