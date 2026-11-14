@@ -17,7 +17,7 @@ const mongoose = require('mongoose');
 const MediaAsset = require('../src/models/MediaAsset');
 const { getStorageConfig, validateR2Config } = require('../src/services/storage/storageConfig');
 const R2StorageProvider = require('../src/services/storage/r2StorageProvider');
-const { UPLOADS_ROOT } = require('../src/controllers/media/mediaController');
+const { UPLOADS_ROOT, LEGACY_UPLOADS_ROOT } = require('../src/controllers/media/mediaController');
 
 async function runMigration(options = {}) {
   const isDryRun = options.dryRun !== undefined ? options.dryRun : process.argv.includes('--dry-run');
@@ -60,7 +60,13 @@ async function runMigration(options = {}) {
   for (const asset of assets) {
     const assetId = asset._id ? asset._id.toString() : (asset.id || 'unknown');
     const localKey = asset.storageKey;
-    const localPath = path.resolve(UPLOADS_ROOT, localKey);
+    let localPath = path.resolve(UPLOADS_ROOT, localKey);
+    if (!fs.existsSync(localPath) && LEGACY_UPLOADS_ROOT) {
+      const legacyPath = path.resolve(LEGACY_UPLOADS_ROOT, localKey);
+      if (fs.existsSync(legacyPath)) {
+        localPath = legacyPath;
+      }
+    }
 
     // Check if asset already has an R2 key or URL
     if (asset.storageProvider === 'r2' || (asset.url && asset.url.startsWith(config.r2.publicBaseUrl))) {

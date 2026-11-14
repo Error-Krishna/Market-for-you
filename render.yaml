@@ -63,6 +63,24 @@ services:
         generateValue: true
       - key: GROQ_API_KEY
         sync: false
+      - key: MEDIA_STORAGE_PROVIDER
+        value: r2
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET_NAME
+        sync: false
+      - key: R2_ENDPOINT
+        sync: false
+      - key: R2_PUBLIC_BASE_URL
+        sync: false
+      - key: CRON_SECRET
+        generateValue: true
+      - key: META_UNIFIED_CONFIG_ID
+        sync: false
       - key: RECOMMENDER_URL
         fromService:
           type: web

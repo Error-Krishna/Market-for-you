@@ -2,7 +2,19 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const UPLOADS_ROOT = path.resolve(__dirname, '..', '..', 'uploads', 'media');
+const PRIMARY_UPLOADS_ROOT = path.resolve(__dirname, '..', '..', '..', 'uploads', 'media');
+const LEGACY_UPLOADS_ROOT = path.resolve(__dirname, '..', '..', 'uploads', 'media');
+
+// Ensure primary directory exists if writable
+try {
+  if (!fs.existsSync(PRIMARY_UPLOADS_ROOT)) {
+    fs.mkdirSync(PRIMARY_UPLOADS_ROOT, { recursive: true });
+  }
+} catch {
+  // Graceful on read-only environments
+}
+
+const UPLOADS_ROOT = PRIMARY_UPLOADS_ROOT;
 
 function getBaseBackendUrl(req) {
   const configured = process.env.PUBLIC_BACKEND_URL?.trim();
@@ -16,6 +28,7 @@ class LocalStorageProvider {
   constructor() {
     this.name = 'local';
     this.uploadsRoot = UPLOADS_ROOT;
+    this.legacyUploadsRoot = LEGACY_UPLOADS_ROOT;
   }
 
   buildStorageKey({ userId, ext }) {
@@ -62,22 +75,36 @@ class LocalStorageProvider {
 
   async delete(key) {
     if (!key || typeof key !== 'string') return;
-    const fullPath = path.resolve(this.uploadsRoot, key);
-    if (!fullPath.startsWith(this.uploadsRoot + path.sep)) return;
-    try {
-      if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
-    } catch (err) {
-      console.warn('Local storage delete warning:', err.message);
+    const candidates = [
+      path.resolve(this.uploadsRoot, key),
+      path.resolve(this.legacyUploadsRoot, key),
+    ];
+    for (const fullPath of candidates) {
+      const isAllowed = fullPath.startsWith(this.uploadsRoot + path.sep)
+        || fullPath.startsWith(this.legacyUploadsRoot + path.sep);
+      if (isAllowed) {
+        try {
+          if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+        } catch (err) {
+          console.warn('Local storage delete warning:', err.message);
+        }
+      }
     }
   }
 
   async head(key) {
     if (!key || typeof key !== 'string') return null;
-    const fullPath = path.resolve(this.uploadsRoot, key);
-    if (!fullPath.startsWith(this.uploadsRoot + path.sep)) return null;
-    if (fs.existsSync(fullPath)) {
-      const stat = fs.statSync(fullPath);
-      return { ContentLength: stat.size };
+    const candidates = [
+      path.resolve(this.uploadsRoot, key),
+      path.resolve(this.legacyUploadsRoot, key),
+    ];
+    for (const fullPath of candidates) {
+      const isAllowed = fullPath.startsWith(this.uploadsRoot + path.sep)
+        || fullPath.startsWith(this.legacyUploadsRoot + path.sep);
+      if (isAllowed && fs.existsSync(fullPath)) {
+        const stat = fs.statSync(fullPath);
+        return { ContentLength: stat.size };
+      }
     }
     return null;
   }

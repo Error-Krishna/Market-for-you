@@ -7,7 +7,19 @@ const { validatePublicHttpUrl } = require('../../utils/tokenCrypto');
 const { getStorageProvider } = require('../../services/storage/storageProvider');
 const { getStorageConfig } = require('../../services/storage/storageConfig');
 
-const UPLOADS_ROOT = path.resolve(__dirname, '..', '..', 'uploads', 'media');
+const PRIMARY_UPLOADS_ROOT = path.resolve(__dirname, '..', '..', '..', 'uploads', 'media');
+const LEGACY_UPLOADS_ROOT = path.resolve(__dirname, '..', '..', 'uploads', 'media');
+
+// Ensure primary directory exists if writable
+try {
+  if (!fs.existsSync(PRIMARY_UPLOADS_ROOT)) {
+    fs.mkdirSync(PRIMARY_UPLOADS_ROOT, { recursive: true });
+  }
+} catch {
+  // Graceful on read-only environments
+}
+
+const UPLOADS_ROOT = PRIMARY_UPLOADS_ROOT;
 
 const MIME_TO_EXT = {
   'image/jpeg': { ext: 'jpg', mediaType: 'image' },
@@ -399,9 +411,14 @@ const serveUploadedMedia = (req, res) => {
   if (!/^[a-fA-F0-9]{24}$/.test(userId) || !/^[a-fA-F0-9-]+\.(jpg|png|webp|gif|mp4)$/.test(filename)) {
     return res.status(404).json({ success: false, message: 'Media not found' });
   }
-  const filePath = path.resolve(UPLOADS_ROOT, userId, filename);
-  if (!filePath.startsWith(UPLOADS_ROOT + path.sep) || !fs.existsSync(filePath)) {
-    return res.status(404).json({ success: false, message: 'Media not found' });
+  let filePath = path.resolve(PRIMARY_UPLOADS_ROOT, userId, filename);
+  if (!filePath.startsWith(PRIMARY_UPLOADS_ROOT + path.sep) || !fs.existsSync(filePath)) {
+    const legacyPath = path.resolve(LEGACY_UPLOADS_ROOT, userId, filename);
+    if (legacyPath.startsWith(LEGACY_UPLOADS_ROOT + path.sep) && fs.existsSync(legacyPath)) {
+      filePath = legacyPath;
+    } else {
+      return res.status(404).json({ success: false, message: 'Media not found' });
+    }
   }
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
@@ -415,4 +432,6 @@ module.exports = {
   deleteMedia,
   serveUploadedMedia,
   UPLOADS_ROOT,
+  PRIMARY_UPLOADS_ROOT,
+  LEGACY_UPLOADS_ROOT,
 };
