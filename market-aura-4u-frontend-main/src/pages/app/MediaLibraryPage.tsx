@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/Label";
 import {
   getMediaAssetId,
   readFileAsDataUrl,
+  resolveMimeType,
   useCreateMedia,
   useDeleteMedia,
   useMediaList,
@@ -131,8 +132,9 @@ export default function MediaLibraryPage() {
     if (!file) return;
     try {
       const encoded = await readFileAsDataUrl(file);
+      const resolved = resolveMimeType(file);
       setDataBase64(encoded);
-      setMimeType(file.type);
+      setMimeType(resolved);
       setFileNameLabel(`${file.name} (${(file.size / 1024).toFixed(1)} KB)`);
       if (!title.trim()) {
         setTitle(file.name.replace(/\.[^.]+$/, ""));
@@ -310,7 +312,7 @@ export default function MediaLibraryPage() {
                   <input
                     id="media-file-upload"
                     type="file"
-                    accept="image/jpeg,image/png,image/webp,image/gif,video/mp4"
+                    accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,image/jpg"
                     onChange={handleFileChange}
                     className="hidden"
                   />

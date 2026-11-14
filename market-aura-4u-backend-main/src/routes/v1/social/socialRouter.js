@@ -2,6 +2,9 @@ const socialRouter = require('express').Router();
 const auth = require('../../../middleware/auth');
 const {
   getSocialStatus,
+  getConnectedAccounts,
+  disconnectAccountById,
+  refreshSocialAccount,
   updateTimezone,
   initTwitterConnect,
   twitterCallback,
@@ -18,6 +21,7 @@ const {
 } = require('../../../controllers/connectAccount/socialConnectController');
 
 socialRouter.get('/social/status', auth, getSocialStatus);
+socialRouter.get('/social/accounts', auth, getConnectedAccounts);
 socialRouter.put('/social/timezone', auth, updateTimezone);
 
 socialRouter.get('/social/twitter/connect', auth, initTwitterConnect);
@@ -38,6 +42,8 @@ socialRouter.post('/social/facebook/select-page', auth, selectFacebookPage);
 socialRouter.post('/social/email/connect', auth, connectEmailAccount);
 socialRouter.post('/social/blog/connect', auth, connectBlogAccount);
 
+socialRouter.delete('/social/accounts/:id', auth, disconnectAccountById);
+socialRouter.post('/social/accounts/:id/refresh', auth, refreshSocialAccount);
 socialRouter.delete('/social/:platform', auth, disconnectPlatform);
 
 module.exports = socialRouter;

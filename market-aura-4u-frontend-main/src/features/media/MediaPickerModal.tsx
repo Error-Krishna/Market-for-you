@@ -1,11 +1,11 @@
-import { useState, type ChangeEvent, type FormEvent } from "react";
+import { useMemo, useState, type ChangeEvent, type FormEvent } from "react";
 import { Check, Film, Image as ImageIcon, Plus, X } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
 import { extractApiErrorMessage } from "@/lib/api/error-message";
-import { readFileAsDataUrl } from "./file-reader";
+import { readFileAsDataUrl, resolveMimeType } from "./file-reader";
 import { getMediaAssetId, type MediaAsset } from "./media.types";
 import { useCreateMedia, useMediaList } from "./useMedia";
 
@@ -30,6 +30,7 @@ function MediaPickerDialog({
 }: MediaPickerModalProps) {
   const [search, setSearch] = useState("");
   const [draftIds, setDraftIds] = useState<string[]>(() => selectedIds);
+  const [localCreatedAssets, setLocalCreatedAssets] = useState<MediaAsset[]>([]);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [title, setTitle] = useState("");
   const [externalUrl, setExternalUrl] = useState("");
@@ -39,6 +40,17 @@ function MediaPickerDialog({
 
   const { data: assets = [], isLoading } = useMediaList({ q: search });
   const createMedia = useCreateMedia();
+
+  const combinedAssets = useMemo(() => {
+    const list = [...localCreatedAssets, ...assets];
+    const seen = new Set<string>();
+    return list.filter((asset) => {
+      const id = getMediaAssetId(asset);
+      if (!id || seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+  }, [localCreatedAssets, assets]);
 
   const toggleId = (id: string) => {
     setDraftIds((prev) => {
@@ -59,7 +71,7 @@ function MediaPickerDialog({
     try {
       const encoded = await readFileAsDataUrl(file);
       setDataUrl(encoded);
-      setMimeType(file.type);
+      setMimeType(resolveMimeType(file));
       if (!title.trim()) {
         setTitle(file.name.replace(/\.[^.]+$/, ""));
       }
@@ -76,9 +88,12 @@ function MediaPickerDialog({
         title: title.trim(),
         ...(dataUrl ? { dataBase64: dataUrl, mimeType } : { url: externalUrl.trim() }),
       });
-      const newId = getMediaAssetId(created);
-      if (newId) {
-        setDraftIds((prev) => [...prev.filter((id) => id !== newId), newId]);
+      if (created) {
+        setLocalCreatedAssets((prev) => [created, ...prev]);
+        const newId = getMediaAssetId(created);
+        if (newId) {
+          setDraftIds((prev) => [...prev.filter((id) => id !== newId), newId]);
+        }
       }
       setTitle("");
       setExternalUrl("");
@@ -91,7 +106,9 @@ function MediaPickerDialog({
   };
 
   const handleConfirm = () => {
-    const selectedAssets = assets.filter((asset) => draftIds.includes(getMediaAssetId(asset)));
+    const selectedAssets = combinedAssets.filter((asset) =>
+      draftIds.includes(getMediaAssetId(asset)),
+    );
     onConfirm(selectedAssets);
     onClose();
   };
@@ -165,7 +182,7 @@ function MediaPickerDialog({
                 <input
                   id="quick-media-file"
                   type="file"
-                  accept="image/jpeg,image/png,image/webp,image/gif,video/mp4"
+                  accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,image/jpg"
                   onChange={handleFileChange}
                   className="mt-1 block w-full text-sm text-text-secondary file:mr-4 file:rounded-lg file:border-0 file:bg-primary/15 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-primary"
                 />
@@ -200,13 +217,13 @@ function MediaPickerDialog({
             </form>
           ) : isLoading ? (
             <p className="py-12 text-center text-sm text-text-secondary">Loading media...</p>
-          ) : assets.length === 0 ? (
+          ) : combinedAssets.length === 0 ? (
             <div className="py-12 text-center text-sm text-text-secondary">
               No media found. Click &ldquo;Upload / Add URL&rdquo; to add your first visual asset.
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {assets.map((asset) => {
+              {combinedAssets.map((asset) => {
                 const id = getMediaAssetId(asset);
                 const selected = draftIds.includes(id);
                 return (

@@ -1,6 +1,9 @@
 export * from "./types/social.types";
 export {
   useSocialStatus,
+  useConnectedAccounts,
+  useDisconnectAccountById,
+  useRefreshSocialAccount,
   useUpdateTimezone,
   useInitiateOAuthConnect,
   useSelectFacebookPage,

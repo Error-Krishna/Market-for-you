@@ -9,11 +9,18 @@ const RETRY_BACKOFF_MS = [60 * 1000, 5 * 60 * 1000, 15 * 60 * 1000];
 const LOCK_DURATION_MS = 2 * 60 * 1000;
 
 async function resolveMediaUrlsForDelivery(entry, userId) {
-  const urls = Array.isArray(entry.mediaUrls) ? entry.mediaUrls.filter(Boolean) : [];
-  if (urls.length > 0) return urls;
-  if (!Array.isArray(entry.mediaAssetIds) || entry.mediaAssetIds.length === 0) return [];
-  const assets = await MediaAsset.find({ _id: { $in: entry.mediaAssetIds }, userId }).select('url');
-  return assets.map((a) => a.url).filter(Boolean);
+  let assetUrls = [];
+  if (Array.isArray(entry.mediaAssetIds) && entry.mediaAssetIds.length > 0) {
+    const assets = await MediaAsset.find({ _id: { $in: entry.mediaAssetIds }, userId }).select('url');
+    assetUrls = assets.map((a) => a.url).filter(Boolean);
+  }
+  const rawUrls = Array.isArray(entry.mediaUrls) ? entry.mediaUrls.filter(Boolean) : [];
+  if (assetUrls.length > 0) {
+    // If rawUrls contains external URLs that are not local upload paths, merge them cleanly
+    const nonLocalRawUrls = rawUrls.filter((u) => !/\/uploads\/media\/[a-fA-F0-9]{24}\//.test(u));
+    return [...new Set([...assetUrls, ...nonLocalRawUrls])];
+  }
+  return rawUrls;
 }
 
 function summarizeOverallStatus(platforms) {

@@ -77,6 +77,21 @@ export interface BlogConnectionStatus {
   connectedAt: string | null;
 }
 
+export interface ConnectedSocialAccount {
+  id: string;
+  provider: SocialPlatform;
+  providerAccountId: string;
+  username: string | null;
+  displayName: string | null;
+  profileImage: string | null;
+  email: string | null;
+  tokenExpiry: string | null;
+  connectionStatus: "connected" | "expired" | "disconnected" | "error";
+  lastConnectedAt: string;
+  lastRefreshedAt: string | null;
+  metadata?: Record<string, unknown>;
+}
+
 export interface SocialStatusData {
   timezone: string;
   platforms: {
@@ -87,6 +102,7 @@ export interface SocialStatusData {
     email: EmailConnectionStatus;
     blog: BlogConnectionStatus;
   };
+  accounts?: ConnectedSocialAccount[];
 }
 
 export interface ConnectEmailPayload {

@@ -2,11 +2,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   connectBlogChannel,
   connectEmailChannel,
+  disconnectAccountById,
   disconnectInstagram,
   disconnectSocialPlatform,
+  getConnectedAccounts,
   getSocialAccounts,
   getSocialStatus,
   initiateOAuthConnect,
+  refreshSocialAccount,
   selectFacebookPage,
   updateTimezone,
 } from "../api/social-api";
@@ -18,11 +21,42 @@ import type {
 } from "../types/social.types";
 
 const SOCIAL_QUERY_KEY = ["socialStatus"];
+const ACCOUNTS_QUERY_KEY = ["connectedSocialAccounts"];
 
 export function useSocialStatus() {
   return useQuery({
     queryKey: SOCIAL_QUERY_KEY,
     queryFn: getSocialStatus,
+  });
+}
+
+export function useConnectedAccounts() {
+  return useQuery({
+    queryKey: ACCOUNTS_QUERY_KEY,
+    queryFn: getConnectedAccounts,
+  });
+}
+
+export function useDisconnectAccountById() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => disconnectAccountById(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: SOCIAL_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: ACCOUNTS_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: ["socialAccounts"] });
+    },
+  });
+}
+
+export function useRefreshSocialAccount() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => refreshSocialAccount(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: SOCIAL_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: ACCOUNTS_QUERY_KEY });
+    },
   });
 }
 
