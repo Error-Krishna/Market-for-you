@@ -67,13 +67,19 @@ async function executePostDelivery(post, user, { onlyStatuses = ['pending'] } = 
         entry.retryable = false;
       } catch (err) {
         entry.status = 'failed';
-        entry.lastError = err?.message || 'Publishing failed';
-        entry.retryable = Boolean(err?.retryable);
+        // Transient transport/HTTP failures can occur after acceptance.
+        // Without provider idempotency, retrying can publish duplicates.
+        entry.outcomeUnknown = Boolean(err?.retryable) || !(err && typeof err.retryable === 'boolean');
+        entry.lastError = entry.outcomeUnknown
+          ? 'Delivery outcome unknown. Check the provider before resolving.'
+          : (err?.message || 'Publishing failed');
+        entry.retryable = false;
       }
     }),
   );
 
   post.status = summarizeOverallStatus(post.platforms);
+  post.deliveryOutcomeUnknown = post.platforms.some((entry) => entry.outcomeUnknown);
   post.lastRunAt = new Date();
   post.lockUntil = null;
   post.lockedBy = null;
@@ -94,12 +100,10 @@ async function executePostDelivery(post, user, { onlyStatuses = ['pending'] } = 
 async function claimDuePost(now, workerId) {
   return ScheduledPost.findOneAndUpdate(
     {
+      deliveryOutcomeUnknown: { $ne: true },
       $and: [
         {
-          $or: [
-            { status: 'scheduled', scheduledAt: { $lte: now } },
-            { status: { $in: ['partial', 'failed'] }, nextRetryAt: { $ne: null, $lte: now } },
-          ],
+          status: 'scheduled', scheduledAt: { $lte: now },
         },
         {
           $or: [
@@ -116,6 +120,7 @@ async function claimDuePost(now, workerId) {
         lockedBy: workerId,
         lastRunAt: now,
       },
+      $inc: { __v: 1 },
     },
     {
       sort: { scheduledAt: 1 },
@@ -124,8 +129,29 @@ async function claimDuePost(now, workerId) {
   );
 }
 
+async function markOutcomeUnknown(filter) {
+  return ScheduledPost.updateMany(
+    filter,
+    [{ $set: {
+      status: 'failed', lockUntil: null, lockedBy: null, nextRetryAt: null, deliveryOutcomeUnknown: true,
+      __v: { $add: [{ $ifNull: ['$__v', 0] }, 1] },
+      platforms: { $map: { input: '$platforms', as: 'entry', in: {
+        $cond: [
+          { $in: ['$$entry.status', ['pending', 'processing']] },
+          { $mergeObjects: ['$$entry', { status: 'failed', retryable: false, outcomeUnknown: true, lastError: 'Delivery outcome unknown after worker interruption. Check the provider before retrying.' }] },
+          '$$entry',
+        ],
+      } } },
+    } }],
+  );
+}
+
 async function processDueScheduledPosts({ now = new Date(), workerId = crypto.randomUUID(), batchLimit = 10 } = {}) {
   if (mongoose.connection.readyState !== 1) return 0;
+
+  // An expired delivery may already have reached the provider. Require review
+  // instead of automatically retrying an outcome that is unknown.
+  await markOutcomeUnknown({ status: 'processing', lockUntil: { $ne: null, $lte: now } });
 
   let processed = 0;
   for (let i = 0; i < batchLimit; i += 1) {
@@ -155,9 +181,7 @@ async function processDueScheduledPosts({ now = new Date(), workerId = crypto.ra
       await executePostDelivery(post, user, { onlyStatuses: targetStatuses });
     } catch (err) {
       console.error(`Scheduler execution error for post ${post._id}:`, err.message);
-      await ScheduledPost.findByIdAndUpdate(post._id, {
-        $set: { status: 'failed', lockUntil: null, lockedBy: null, nextRetryAt: null },
-      }).catch(() => {});
+      await markOutcomeUnknown({ _id: post._id, status: 'processing', lockedBy: workerId, __v: post.__v }).catch(() => {});
     }
   }
   return processed;

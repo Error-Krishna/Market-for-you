@@ -8,6 +8,11 @@ const { validatePublicHttpUrl } = require('../../utils/tokenCrypto');
 const { executePostDelivery } = require('../../services/schedulerService');
 
 const ALLOWED_PLATFORMS = new Set(['twitter', 'linkedin', 'instagram', 'facebook', 'email', 'blog']);
+const DELIVERY_LEASE_MS = 2 * 60 * 1000;
+
+function requiresDeliveryReview(post) {
+  return post.deliveryOutcomeUnknown || (post.platforms || []).some((entry) => entry.outcomeUnknown || entry.retryable);
+}
 
 function toPlainObject(maybeMap) {
   if (!maybeMap) return {};
@@ -248,6 +253,7 @@ const createPost = async (req, res) => {
       timezone: typeof timezone === 'string' && timezone.trim() ? timezone.trim() : (user.timezone || 'UTC'),
       recommendedTimeUsed,
       status: mode === 'now' ? 'processing' : 'scheduled',
+      lockUntil: mode === 'now' ? new Date(Date.now() + DELIVERY_LEASE_MS) : null,
       platforms: deliveries,
     });
 
@@ -317,6 +323,7 @@ const updatePost = async (req, res) => {
     }
     const post = await ScheduledPost.findOne({ _id: req.params.id, userId: req.user.id });
     if (!post) return res.status(404).json({ success: false, message: 'Post not found.' });
+    if (requiresDeliveryReview(post)) return res.status(409).json({ success: false, message: 'Delivery outcome is unknown. Check the provider before taking further action.' });
     if (post.status === 'published' || post.status === 'processing') {
       return res.status(400).json({ success: false, message: `Cannot edit a post with status "${post.status}".` });
     }
@@ -382,6 +389,7 @@ const updatePost = async (req, res) => {
     return res.status(200).json({ success: true, message: 'Scheduled post updated', post });
   } catch (error) {
     console.error('Update scheduled post error:', error.message);
+    if (error.name === 'VersionError') return res.status(409).json({ success: false, message: 'Post changed while editing. Refresh and try again.' });
     return res.status(500).json({ success: false, message: 'Failed to update scheduled post.' });
   }
 };
@@ -393,6 +401,7 @@ const publishPostNow = async (req, res) => {
     }
     const post = await ScheduledPost.findOne({ _id: req.params.id, userId: req.user.id });
     if (!post) return res.status(404).json({ success: false, message: 'Post not found.' });
+    if (requiresDeliveryReview(post)) return res.status(409).json({ success: false, message: 'Delivery outcome is unknown. Check the provider before taking further action.' });
     if (post.status === 'published') {
       return res.status(400).json({ success: false, message: 'Post has already been published to all platforms.' });
     }
@@ -406,12 +415,14 @@ const publishPostNow = async (req, res) => {
     const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ success: false, message: 'User not found.' });
 
-    post.status = 'processing';
-    post.scheduledAt = new Date();
-    post.nextRetryAt = null;
-    await post.save();
+    const claimed = await ScheduledPost.findOneAndUpdate(
+      { _id: post._id, userId: req.user.id, deliveryOutcomeUnknown: { $ne: true }, status: { $in: ['scheduled', 'partial', 'failed'] } },
+      { $set: { status: 'processing', scheduledAt: new Date(), nextRetryAt: null, lockUntil: new Date(Date.now() + DELIVERY_LEASE_MS) }, $inc: { __v: 1 } },
+      { new: true },
+    );
+    if (!claimed) return res.status(409).json({ success: false, message: 'Post delivery is already in progress or its status changed.' });
 
-    const completed = await executePostDelivery(post, user, { onlyStatuses: ['pending', 'failed'] });
+    const completed = await executePostDelivery(claimed, user, { onlyStatuses: ['pending', 'failed'] });
     const anySuccess = completed.platforms.some((p) => p.status === 'published');
     return res.status(200).json({
       success: anySuccess,
@@ -435,6 +446,7 @@ const retryFailedPlatforms = async (req, res) => {
     }
     const post = await ScheduledPost.findOne({ _id: req.params.id, userId: req.user.id });
     if (!post) return res.status(404).json({ success: false, message: 'Post not found.' });
+    if (requiresDeliveryReview(post)) return res.status(409).json({ success: false, message: 'Delivery outcome is unknown. Check the provider before taking further action.' });
     if (post.status === 'processing' && post.lockUntil && new Date(post.lockUntil).getTime() > Date.now()) {
       return res.status(409).json({ success: false, message: 'Post delivery is already in progress.' });
     }
@@ -447,11 +459,14 @@ const retryFailedPlatforms = async (req, res) => {
     const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ success: false, message: 'User not found.' });
 
-    post.status = 'processing';
-    post.nextRetryAt = null;
-    await post.save();
+    const claimed = await ScheduledPost.findOneAndUpdate(
+      { _id: post._id, userId: req.user.id, deliveryOutcomeUnknown: { $ne: true }, status: { $in: ['partial', 'failed'] }, 'platforms.status': 'failed' },
+      { $set: { status: 'processing', nextRetryAt: null, lockUntil: new Date(Date.now() + DELIVERY_LEASE_MS) }, $inc: { __v: 1 } },
+      { new: true },
+    );
+    if (!claimed) return res.status(409).json({ success: false, message: 'Post delivery is already in progress or its status changed.' });
 
-    const completed = await executePostDelivery(post, user, { onlyStatuses: ['failed'] });
+    const completed = await executePostDelivery(claimed, user, { onlyStatuses: ['failed'] });
     return res.status(200).json({
       success: completed.status === 'published' || completed.status === 'partial',
       message: completed.status === 'published' ? 'All failed platforms succeeded on retry!' : 'Retry finished.',
@@ -463,6 +478,36 @@ const retryFailedPlatforms = async (req, res) => {
   }
 };
 
+const resolveDeliveryOutcome = async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: 'Invalid post ID.' });
+    const { platformIndex, outcome, verifiedProvider, previousAttemptEnded } = req.body || {};
+    if (!Number.isInteger(platformIndex) || platformIndex < 0 || !['published', 'not_published'].includes(outcome) || verifiedProvider !== true || previousAttemptEnded !== true) {
+      return res.status(400).json({ success: false, message: 'Specify a platform index and confirmed outcome, and confirm provider review and that the previous attempt ended.' });
+    }
+    const post = await ScheduledPost.findOne({ _id: req.params.id, userId: req.user.id });
+    if (!post) return res.status(404).json({ success: false, message: 'Post not found.' });
+    if (post.status === 'processing') return res.status(409).json({ success: false, message: 'Delivery is still in progress.' });
+    const entry = post.platforms[platformIndex];
+    if (!entry || !(entry.outcomeUnknown || entry.retryable)) return res.status(409).json({ success: false, message: 'This platform has no unresolved delivery outcome.' });
+    entry.status = outcome === 'published' ? 'published' : 'failed';
+    entry.outcomeUnknown = false;
+    entry.retryable = false;
+    entry.outcomeReviewedAt = new Date();
+    entry.lastError = outcome === 'published' ? null : 'Provider review confirmed this delivery was not published.';
+    post.deliveryOutcomeUnknown = post.platforms.some((item) => item.outcomeUnknown || item.retryable);
+    post.nextRetryAt = null;
+    post.status = post.platforms.every((item) => item.status === 'published' || item.status === 'cancelled')
+      ? 'published' : post.platforms.some((item) => item.status === 'published') ? 'partial' : 'failed';
+    await post.save();
+    return res.status(200).json({ success: true, message: 'Delivery outcome recorded. No delivery was started.', post });
+  } catch (error) {
+    if (error.name === 'VersionError') return res.status(409).json({ success: false, message: 'Post changed during review. Refresh and try again.' });
+    console.error('Resolve delivery outcome error:', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to record delivery outcome.' });
+  }
+};
+
 const cancelPost = async (req, res) => {
   try {
     if (!mongoose.isValidObjectId(req.params.id)) {
@@ -470,6 +515,7 @@ const cancelPost = async (req, res) => {
     }
     const post = await ScheduledPost.findOne({ _id: req.params.id, userId: req.user.id });
     if (!post) return res.status(404).json({ success: false, message: 'Post not found.' });
+    if (requiresDeliveryReview(post)) return res.status(409).json({ success: false, message: 'Delivery outcome is unknown. Check the provider before taking further action.' });
     if (post.status === 'published' || post.status === 'processing') {
       return res.status(400).json({ success: false, message: `Cannot cancel a post that is ${post.status}.` });
     }
@@ -483,6 +529,7 @@ const cancelPost = async (req, res) => {
     return res.status(200).json({ success: true, message: 'Scheduled post cancelled', post });
   } catch (error) {
     console.error('Cancel post error:', error.message);
+    if (error.name === 'VersionError') return res.status(409).json({ success: false, message: 'Post changed while cancelling. Refresh and try again.' });
     return res.status(500).json({ success: false, message: 'Failed to cancel post.' });
   }
 };
@@ -496,8 +543,12 @@ const deletePost = async (req, res) => {
       _id: req.params.id,
       userId: req.user.id,
       status: { $ne: 'processing' },
+      deliveryOutcomeUnknown: { $ne: true },
+      platforms: { $not: { $elemMatch: { $or: [{ outcomeUnknown: true }, { retryable: true }] } } },
     });
     if (!deleted) {
+      const post = await ScheduledPost.findOne({ _id: req.params.id, userId: req.user.id });
+      if (post && requiresDeliveryReview(post)) return res.status(409).json({ success: false, message: 'Delivery outcome is unknown. Check the provider before deleting this post.' });
       return res.status(404).json({ success: false, message: 'Post not found or currently processing.' });
     }
     return res.status(200).json({ success: true, message: 'Post deleted.' });
@@ -514,6 +565,7 @@ module.exports = {
   updatePost,
   publishPostNow,
   retryFailedPlatforms,
+  resolveDeliveryOutcome,
   cancelPost,
   deletePost,
   buildBroadcastPlatformContent,

@@ -8,6 +8,7 @@ const {
   updatePost,
   publishPostNow,
   retryFailedPlatforms,
+  resolveDeliveryOutcome,
   cancelPost,
   deletePost,
 } = require('../../../controllers/content/scheduleController');
@@ -18,6 +19,7 @@ postsRouter.get('/:id', auth, isOnboarded, getPost);
 postsRouter.put('/:id', auth, isOnboarded, updatePost);
 postsRouter.post('/:id/publish-now', auth, isOnboarded, publishPostNow);
 postsRouter.post('/:id/retry', auth, isOnboarded, retryFailedPlatforms);
+postsRouter.post('/:id/resolve-delivery', auth, isOnboarded, resolveDeliveryOutcome);
 postsRouter.post('/:id/cancel', auth, isOnboarded, cancelPost);
 postsRouter.delete('/:id', auth, isOnboarded, deletePost);
 

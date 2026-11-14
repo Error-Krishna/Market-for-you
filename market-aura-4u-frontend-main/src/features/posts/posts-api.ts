@@ -50,6 +50,20 @@ export async function retryFailedPost(id: string): Promise<{
   return { message: res.data.message, post: res.data.post };
 }
 
+export async function resolveDelivery(
+  id: string,
+  platformIndex: number,
+  outcome: "published" | "not_published",
+): Promise<ScheduledPost> {
+  const res = await apiClient.post(`/v1/posts/${id}/resolve-delivery`, {
+    platformIndex,
+    outcome,
+    verifiedProvider: true,
+    previousAttemptEnded: true,
+  });
+  return res.data.post;
+}
+
 export async function cancelPost(id: string): Promise<ScheduledPost> {
   const res = await apiClient.post(`/v1/posts/${id}/cancel`);
   return res.data.post;
