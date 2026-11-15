@@ -1,42 +1,12 @@
 # ==============================================================================
 # Market Aura 4U — Render Infrastructure as Code (Blueprint)
-# Defines Web SPA, Node.js Backend API, and Python ML Recommender Service
+# Defines Node.js Backend API and optional Python ML Recommender Service.
+# Frontend is deployed independently on Vercel (https://<project>.vercel.app).
 # ==============================================================================
 
 services:
   # ----------------------------------------------------------------------------
-  # 1. Frontend Web SPA
-  # ----------------------------------------------------------------------------
-  - type: web
-    name: market-aura-web
-    runtime: static
-    rootDir: market-aura-4u-frontend-main
-    buildCommand: npm install && npm run build
-    staticPublishPath: ./dist
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
-    headers:
-      - path: /assets/*
-        name: Cache-Control
-        value: public, max-age=31536000, immutable
-      - path: /*
-        name: X-Content-Type-Options
-        value: nosniff
-      - path: /*
-        name: X-Frame-Options
-        value: SAMEORIGIN
-    envVars:
-      - key: VITE_API_URL
-        fromService:
-          type: web
-          name: market-aura-api
-          property: host
-          path: /api
-
-  # ----------------------------------------------------------------------------
-  # 2. Backend Express API
+  # 1. Backend Express API (Primary Web Service)
   # ----------------------------------------------------------------------------
   - type: web
     name: market-aura-api
@@ -51,18 +21,30 @@ services:
         value: production
       - key: PORT
         value: 10000
+      - key: PUBLIC_BACKEND_URL
+        sync: false # e.g. https://<market-aura-api>.onrender.com
+      - key: FRONTEND_URL
+        sync: false # e.g. https://<market-aura-project>.vercel.app
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false # e.g. https://<market-aura-project>.vercel.app
       - key: CHECKOUT_ENABLED
         value: "true"
       - key: AUTH_PROXY_MODE
         value: direct
       - key: MONGO_URI
-        sync: false # Set via Render dashboard or environment secret
+        sync: false # MongoDB Atlas connection string
+      - key: MONGO_MAX_POOL_SIZE
+        value: "20"
       - key: JWT_SECREAT_KEY
         generateValue: true
+      - key: JWT_SECRET_KEY
+        sync: false # Optional alias
       - key: TOKEN_ENCRYPTION_KEY
         generateValue: true
       - key: GROQ_API_KEY
         sync: false
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-20b
       - key: MEDIA_STORAGE_PROVIDER
         value: r2
       - key: R2_ACCOUNT_ID
@@ -74,12 +56,52 @@ services:
       - key: R2_BUCKET_NAME
         sync: false
       - key: R2_ENDPOINT
-        sync: false
+        sync: false # Optional custom endpoint override
       - key: R2_PUBLIC_BASE_URL
-        sync: false
+        sync: false # Public HTTPS URL (e.g. https://media.marketaura4u.com or https://pub-xxx.r2.dev)
+      - key: R2_REGION
+        value: auto
+      - key: MEDIA_STORAGE_PREFIX
+        value: media
+      - key: MEDIA_UPLOADS_ENABLED
+        value: "true"
+      - key: MEDIA_MAX_UPLOAD_BYTES
+        value: "10485760"
+      - key: MEDIA_USER_STORAGE_QUOTA_BYTES
+        value: "104857600"
+      - key: MEDIA_USER_MONTHLY_UPLOAD_LIMIT
+        value: "100"
       - key: CRON_SECRET
         generateValue: true
       - key: META_UNIFIED_CONFIG_ID
+        sync: false
+      - key: FACEBOOK_APP_ID
+        sync: false
+      - key: FACEBOOK_APP_SECRET
+        sync: false
+      - key: FACEBOOK_REDIRECT_URI
+        sync: false
+      - key: INSTAGRAM_APP_ID
+        sync: false
+      - key: INSTAGRAM_APP_SECRET
+        sync: false
+      - key: INSTAGRAM_REDIRECT_URI
+        sync: false
+      - key: TWITTER_CLIENT_ID
+        sync: false
+      - key: TWITTER_CLIENT_SECRET
+        sync: false
+      - key: TWITTER_REDIRECT_URI
+        sync: false
+      - key: LINKEDIN_CLIENT_ID
+        sync: false
+      - key: LINKEDIN_CLIENT_SECRET
+        sync: false
+      - key: LINKEDIN_REDIRECT_URI
+        sync: false
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
         sync: false
       - key: RECOMMENDER_URL
         fromService:
@@ -97,19 +119,9 @@ services:
         value: none
       - key: RECOMMENDER_TIMEOUT_MS
         value: 30000
-      - key: FRONTEND_URL
-        fromService:
-          type: web
-          name: market-aura-web
-          property: host
-      - key: CORS_ALLOWED_ORIGINS
-        fromService:
-          type: web
-          name: market-aura-web
-          property: host
 
   # ----------------------------------------------------------------------------
-  # 3. Python ML Recommendation Engine
+  # 2. Python ML Recommendation Engine (Optional Microservice)
   # ----------------------------------------------------------------------------
   - type: web
     name: market-aura-ml
@@ -125,3 +137,18 @@ services:
         value: 0.0.0.0
       - key: HF_HUB_OFFLINE
         value: "1"
+
+  # ----------------------------------------------------------------------------
+  # OPTIONAL FALLBACK: Frontend Web SPA on Render
+  # (Uncomment ONLY if you wish to host the frontend on Render instead of Vercel)
+  # ----------------------------------------------------------------------------
+  # - type: web
+  #   name: market-aura-web
+  #   runtime: static
+  #   rootDir: market-aura-4u-frontend-main
+  #   buildCommand: npm install && npm run build
+  #   staticPublishPath: ./dist
+  #   routes:
+  #     - type: rewrite
+  #       source: /*
+  #       destination: /index.html
