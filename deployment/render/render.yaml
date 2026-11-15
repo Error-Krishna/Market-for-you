@@ -57,34 +57,47 @@ services:
         generateValue: true
       - key: META_UNIFIED_CONFIG_ID
         sync: false
-      - key: RECOMMENDER_URL
-        fromService:
-          type: web
-          name: market-aura-ml
-          property: host
-          path: /recommend
-      - key: RECOMMENDER_HEALTH_URL
-        fromService:
-          type: web
-          name: market-aura-ml
-          property: host
-          path: /health
-      - key: RECOMMENDER_AUTH_MODE
-        value: none
-      - key: RECOMMENDER_TIMEOUT_MS
-        value: 30000
+      # ------------------------------------------------------------------------
+      # Recommender Service (Temporarily excluded for initial deployment)
+      # SentenceTransformers + PyTorch requires >= 1GB RAM (exceeds Free 512MiB).
+      # Express API operates with automatic graceful fallback when unset.
+      # Uncomment when deploying market-aura-ml on a plan with >= 1GB RAM.
+      # ------------------------------------------------------------------------
+      # - key: RECOMMENDER_URL
+      #   fromService:
+      #     type: web
+      #     name: market-aura-ml
+      #     property: host
+      #     path: /recommend
+      # - key: RECOMMENDER_HEALTH_URL
+      #   fromService:
+      #     type: web
+      #     name: market-aura-ml
+      #     property: host
+      #     path: /health
+      # - key: RECOMMENDER_AUTH_MODE
+      #   value: none
+      # - key: RECOMMENDER_TIMEOUT_MS
+      #   value: 30000
 
-  - type: web
-    name: market-aura-ml
-    runtime: docker
-    dockerfilePath: CAPSTONE/Dockerfile
-    dockerContext: CAPSTONE
-    healthCheckPath: /health
-    plan: free
-    envVars:
-      - key: PORT
-        value: 8080
-      - key: RECOMMENDER_HOST
-        value: 0.0.0.0
-      - key: HF_HUB_OFFLINE
-        value: "1"
+  # ----------------------------------------------------------------------------
+  # 2. Python ML Recommendation Engine (POSTPONED / OPTIONAL MICROSERVICE)
+  # NOTE: SentenceTransformers ('all-MiniLM-L6-v2') + PyTorch requires ~800MB-1GB RAM.
+  # Render Free tier limits instances to 512MiB, causing OOM restarts.
+  # To deploy this service, upgrade to a Render Starter plan (1GB RAM) or deploy
+  # to Google Cloud Run, then uncomment this service definition.
+  # ----------------------------------------------------------------------------
+  # - type: web
+  #   name: market-aura-ml
+  #   runtime: docker
+  #   dockerfilePath: CAPSTONE/Dockerfile
+  #   dockerContext: CAPSTONE
+  #   healthCheckPath: /health
+  #   plan: starter # Requires >= 1GB RAM to avoid Out of Memory (512Mi limit)
+  #   envVars:
+  #     - key: PORT
+  #       value: 8080
+  #     - key: RECOMMENDER_HOST
+  #       value: 0.0.0.0
+  #     - key: HF_HUB_OFFLINE
+  #       value: "1"
