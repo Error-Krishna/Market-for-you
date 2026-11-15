@@ -148,10 +148,20 @@ const generateContent = async (req, res) => {
 
     // Atomically debit 1 credit for completed generation when database is connected
     try {
-      if (typeof User.findByIdAndUpdate === 'function') {
-        const updatePromise = User.findByIdAndUpdate(userId, { $inc: { 'credits.used': 1 } });
+      if (typeof User.findOneAndUpdate === 'function') {
+        const updatePromise = User.findOneAndUpdate(
+          { _id: userId, $expr: { $lt: ['$credits.used', '$credits.monthly'] } },
+          { $inc: { 'credits.used': 1 } }
+        );
         if (updatePromise && typeof updatePromise.catch === 'function') {
           // Do not await if disconnected to prevent Mongoose command buffering hang
+          if (require('mongoose').connection?.readyState === 1) {
+            await updatePromise;
+          }
+        }
+      } else if (typeof User.findByIdAndUpdate === 'function') {
+        const updatePromise = User.findByIdAndUpdate(userId, { $inc: { 'credits.used': 1 } });
+        if (updatePromise && typeof updatePromise.catch === 'function') {
           if (require('mongoose').connection?.readyState === 1) {
             await updatePromise;
           }

@@ -161,3 +161,85 @@ test('updateMedia and deleteMedia return 400 on invalid media ObjectId', async (
   await deleteMedia({ user: { id: userId }, params: { id: 'not-an-id' } }, deleteRes);
   assert.equal(deleteRes.statusCode, 400);
 });
+
+test('createMedia parses image/jpg alias and normalizes to image/jpeg', async () => {
+  let createdDoc = null;
+  mock.method(MediaAsset, 'create', async (doc) => {
+    createdDoc = { ...doc, id: '607f1f77bcf86cd799439099' };
+    return createdDoc;
+  });
+
+  const jpegBytes = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+  const req = {
+    user: { id: userId },
+    protocol: 'http',
+    get: () => 'localhost:8000',
+    body: {
+      title: 'JPEG with JPG MIME',
+      mimeType: 'image/jpg',
+      dataBase64: `data:image/jpg;base64,${jpegBytes.toString('base64')}`,
+    },
+  };
+  const res = mockRes();
+  await createMedia(req, res);
+
+  assert.equal(res.statusCode, 201);
+  assert.equal(res.body.success, true);
+  assert.equal(createdDoc.mimeType, 'image/jpeg');
+  assert.equal(createdDoc.mediaType, 'image');
+});
+
+test('createMedia handles data URLs with newlines, spaces, and extra parameters', async () => {
+  let createdDoc = null;
+  mock.method(MediaAsset, 'create', async (doc) => {
+    createdDoc = { ...doc, id: '607f1f77bcf86cd799439098' };
+    return createdDoc;
+  });
+
+  const base64WithNewlines = `${VALID_PNG_BASE64.slice(0, 10)}\n\r  ${VALID_PNG_BASE64.slice(10)}\n`;
+  const req = {
+    user: { id: userId },
+    protocol: 'http',
+    get: () => 'localhost:8000',
+    body: {
+      title: 'Formatted Base64 Data URL',
+      dataBase64: `data:image/png;name=photo.png;base64,${base64WithNewlines}`,
+    },
+  };
+  const res = mockRes();
+  await createMedia(req, res);
+
+  assert.equal(res.statusCode, 201);
+  assert.equal(res.body.success, true);
+  assert.equal(createdDoc.mimeType, 'image/png');
+});
+
+test('createMedia accepts valid MP4 video upload and sets mediaType to video', async () => {
+  let createdDoc = null;
+  mock.method(MediaAsset, 'create', async (doc) => {
+    createdDoc = { ...doc, id: '607f1f77bcf86cd799439097' };
+    return createdDoc;
+  });
+
+  const validMp4Buffer = Buffer.from([
+    0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70,
+    0x69, 0x73, 0x6f, 0x6d, 0x00, 0x00, 0x02, 0x00,
+  ]);
+  const req = {
+    user: { id: userId },
+    protocol: 'http',
+    get: () => 'localhost:8000',
+    body: {
+      title: 'Promo Video Clip',
+      mimeType: 'video/mp4',
+      dataBase64: `data:video/mp4;base64,${validMp4Buffer.toString('base64')}`,
+    },
+  };
+  const res = mockRes();
+  await createMedia(req, res);
+
+  assert.equal(res.statusCode, 201);
+  assert.equal(res.body.success, true);
+  assert.equal(createdDoc.mediaType, 'video');
+  assert.equal(createdDoc.mimeType, 'video/mp4');
+});

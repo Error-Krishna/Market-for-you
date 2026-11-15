@@ -474,3 +474,59 @@ test('emailPublisher fails clearly when local upload is missing or attachments e
     (err) => err.code === 'INVALID_MEDIA' && err.retryable === false && /size limit/i.test(err.message),
   );
 });
+
+test('Serverless Scheduler Runner: handles auth and executes due jobs', async () => {
+  const schedulerRouter = require('../src/routes/v1/scheduler/schedulerRouter');
+  const schedulerService = require('../src/services/schedulerService');
+
+  // Find the route handler from schedulerRouter stack
+  const layer = schedulerRouter.stack.find((l) => l.route?.path === '/run');
+  assert.ok(layer, 'Route /run must be defined on schedulerRouter');
+  const handler = layer.route.stack[0].handle;
+
+  const originalEnv = { ...process.env };
+
+  try {
+    // 1. Rejects unauthorized invocation when CRON_SECRET is configured
+    process.env.CRON_SECRET = 'super-secret-cron-token-123';
+    const unauthReq = {
+      headers: {},
+    };
+    const unauthRes = mockRes();
+    await handler(unauthReq, unauthRes);
+    assert.equal(unauthRes.statusCode, 401);
+
+    // 2. Rejects when CRON_SECRET is missing in production
+    delete process.env.CRON_SECRET;
+    process.env.NODE_ENV = 'production';
+    const prodReq = { headers: {} };
+    const prodRes = mockRes();
+    await handler(prodReq, prodRes);
+    assert.equal(prodRes.statusCode, 403);
+
+    // 3. Accepts valid Bearer token and executes processDueScheduledPosts
+    process.env.NODE_ENV = 'development';
+    process.env.CRON_SECRET = 'valid-cron-token-456';
+    let processCalledWith = null;
+    mock.method(schedulerService, 'processDueScheduledPosts', async (opts) => {
+      processCalledWith = opts;
+      return 3;
+    });
+
+    const validReq = {
+      headers: {
+        authorization: 'Bearer valid-cron-token-456',
+      },
+    };
+    const validRes = mockRes();
+    await handler(validReq, validRes);
+    assert.equal(validRes.statusCode, 200);
+    assert.equal(validRes.body.success, true);
+    assert.equal(validRes.body.processedCount, 3);
+    assert.ok(processCalledWith);
+    assert.equal(processCalledWith.batchLimit, 15);
+  } finally {
+    process.env = { ...originalEnv };
+  }
+});
+

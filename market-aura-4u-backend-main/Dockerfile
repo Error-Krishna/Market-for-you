@@ -33,6 +33,9 @@ COPY package.json ./
 # Copy source code and documentation
 COPY src/ ./src/
 
+# Create uploads directory and ensure correct ownership for non-root node user
+RUN mkdir -p uploads/media && chown -R node:node uploads
+
 # Use unprivileged node user
 USER node
 

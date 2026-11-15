@@ -10,6 +10,7 @@ import {
   Mail,
   RefreshCw,
   Trash2,
+  Users,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
@@ -20,6 +21,8 @@ import {
   useConnectBlogChannel,
   useConnectEmailChannel,
   useDisconnectSocialPlatform,
+  useDisconnectAccountById,
+  useRefreshSocialAccount,
   useInitiateOAuthConnect,
   useSelectFacebookPage,
   useSocialStatus,
@@ -90,6 +93,8 @@ export default function SocialAccountsPage() {
   const connectEmail = useConnectEmailChannel();
   const connectBlog = useConnectBlogChannel();
   const disconnectPlatform = useDisconnectSocialPlatform();
+  const disconnectAccount = useDisconnectAccountById();
+  const refreshAccount = useRefreshSocialAccount();
 
   const [banner, setBanner] = useState<{ type: "success" | "error"; text: string } | null>(() => {
     const connected = searchParams.get("connected");
@@ -106,6 +111,7 @@ export default function SocialAccountsPage() {
     return null;
   });
 
+  const [nowTimestamp] = useState(() => Date.now());
   const [timezoneDraft, setTimezoneDraft] = useState<string | null>(null);
   const [selectedPageDraft, setSelectedPageDraft] = useState<string | null>(null);
   const [showEmailForm, setShowEmailForm] = useState(false);
@@ -199,6 +205,32 @@ export default function SocialAccountsPage() {
       setBanner({
         type: "error",
         text: extractApiErrorMessage(err, `Failed to disconnect ${platform}.`),
+      });
+    }
+  };
+
+  const handleDisconnectAccount = async (id: string, name: string) => {
+    setBanner(null);
+    try {
+      await disconnectAccount.mutateAsync(id);
+      setBanner({ type: "success", text: `Account "${name}" disconnected successfully.` });
+    } catch (err) {
+      setBanner({
+        type: "error",
+        text: extractApiErrorMessage(err, `Failed to disconnect account.`),
+      });
+    }
+  };
+
+  const handleRefreshAccount = async (id: string, name: string) => {
+    setBanner(null);
+    try {
+      await refreshAccount.mutateAsync(id);
+      setBanner({ type: "success", text: `Account "${name}" token refreshed successfully.` });
+    } catch (err) {
+      setBanner({
+        type: "error",
+        text: extractApiErrorMessage(err, `Failed to refresh token.`),
       });
     }
   };
@@ -369,6 +401,95 @@ export default function SocialAccountsPage() {
         </div>
       </Card>
 
+      {/* Active Connected Accounts Portfolio */}
+      {status?.accounts && status.accounts.length > 0 && (
+        <Card className="space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-border/40">
+            <div className="flex items-center gap-2">
+              <Users className="size-5 text-primary" />
+              <div>
+                <h2 className="text-base font-semibold">
+                  Active Connected Accounts ({status.accounts.length})
+                </h2>
+                <p className="text-xs text-text-secondary">
+                  Independently authenticated accounts available for multi-channel publishing.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="divide-y divide-border/30">
+            {status.accounts.map((acc) => {
+              const isExpired =
+                acc.tokenExpiry && new Date(acc.tokenExpiry).getTime() <= nowTimestamp;
+              return (
+                <div
+                  key={acc.id}
+                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-3"
+                >
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-sm capitalize text-text">
+                        {acc.provider === "twitter" ? "X (Twitter)" : acc.provider}
+                      </span>
+                      <span className="text-xs text-text-muted">
+                        {acc.username
+                          ? `@${acc.username}`
+                          : acc.displayName || acc.providerAccountId}
+                      </span>
+                      <span
+                        className={
+                          isExpired
+                            ? "rounded-full bg-danger/15 px-2 py-0.5 text-[10px] font-medium text-danger"
+                            : "rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-500"
+                        }
+                      >
+                        {isExpired ? "Token Expired" : "Active"}
+                      </span>
+                    </div>
+                    <p className="text-xs text-text-muted">
+                      Connected: {new Date(acc.lastConnectedAt).toLocaleDateString()}
+                      {acc.tokenExpiry &&
+                        !isExpired &&
+                        ` • Expires: ${new Date(acc.tokenExpiry).toLocaleDateString()}`}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {acc.provider === "twitter" && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleRefreshAccount(acc.id, acc.username || acc.provider)}
+                        isLoading={refreshAccount.isPending && refreshAccount.variables === acc.id}
+                      >
+                        Refresh Token
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      leftIcon={<Trash2 className="size-3.5 text-danger" />}
+                      onClick={() =>
+                        handleDisconnectAccount(
+                          acc.id,
+                          acc.username || acc.displayName || acc.provider,
+                        )
+                      }
+                      isLoading={
+                        disconnectAccount.isPending && disconnectAccount.variables === acc.id
+                      }
+                    >
+                      Disconnect
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+
       {/* OAuth Social Platforms */}
       <div className="grid gap-4 md:grid-cols-2">
         {OAUTH_PLATFORMS.map((meta) => {
@@ -465,7 +586,7 @@ export default function SocialAccountsPage() {
                   isLoading={initiateOAuth.isPending && initiateOAuth.variables === meta.key}
                   disabled={!serverConfigured}
                 >
-                  {isConnected ? "Reconnect" : "Connect"}
+                  {isConnected ? "Connect Another Account" : "Connect"}
                 </Button>
 
                 {isConnected && (

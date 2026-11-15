@@ -9,7 +9,8 @@ function readRecommenderConfig(env = process.env) {
   }
 
   const recommend = endpoint(env.RECOMMENDER_URL || 'http://localhost:8001/recommend', 'RECOMMENDER_URL');
-  const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(recommend.hostname);
+  const loopback = ['localhost', '127.0.0.1', '[::1]', 'ml-recommender', 'market-aura-ml'].includes(recommend.hostname)
+    || recommend.hostname.endsWith('.internal');
   const authMode = env.RECOMMENDER_AUTH_MODE || (loopback ? 'none' : 'cloud-run');
   if (!['none', 'cloud-run'].includes(authMode)) {
     throw new Error('RECOMMENDER_AUTH_MODE must be none or cloud-run');

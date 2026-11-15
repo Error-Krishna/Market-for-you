@@ -1,6 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { UPLOADS_ROOT } = require('../../controllers/media/mediaController');
+const { UPLOADS_ROOT, LEGACY_UPLOADS_ROOT } = require('../../controllers/media/mediaController');
 const { validatePublicHttpUrl } = require('../../utils/tokenCrypto');
 
 class PublisherError extends Error {
@@ -91,9 +91,14 @@ async function loadMediaBuffer(mediaUrl) {
   const localMatch = pathCandidate.match(/\/uploads\/media\/([a-fA-F0-9]{24})\/([a-fA-F0-9-]+\.(jpg|jpeg|png|webp|gif|mp4))$/i);
   if (localMatch) {
     const [, userId, filename, ext] = localMatch;
-    const filePath = path.resolve(UPLOADS_ROOT, userId, filename);
+    let filePath = path.resolve(UPLOADS_ROOT, userId, filename);
     if (!filePath.startsWith(UPLOADS_ROOT + path.sep) || !fs.existsSync(filePath)) {
-      throw new PublisherError('Attached uploaded media file was not found.', { code: 'INVALID_MEDIA', retryable: false });
+      const legacyPath = LEGACY_UPLOADS_ROOT ? path.resolve(LEGACY_UPLOADS_ROOT, userId, filename) : null;
+      if (legacyPath && legacyPath.startsWith(LEGACY_UPLOADS_ROOT + path.sep) && fs.existsSync(legacyPath)) {
+        filePath = legacyPath;
+      } else {
+        throw new PublisherError('Attached uploaded media file was not found.', { code: 'INVALID_MEDIA', retryable: false });
+      }
     }
     const buffer = fs.readFileSync(filePath);
     if (buffer.length === 0 || buffer.length > MAX_MEDIA_BYTES) {

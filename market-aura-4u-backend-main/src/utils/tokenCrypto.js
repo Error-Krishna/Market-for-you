@@ -1,17 +1,34 @@
 const crypto = require('node:crypto');
 const net = require('node:net');
 
-function resolveEncryptionKey() {
-  const raw = process.env.TOKEN_ENCRYPTION_KEY;
+function getJwtSecret(env = process.env) {
+  const secret = (env.JWT_SECREAT_KEY || env.JWT_SECRET_KEY || env.JWT_SECRET || '').trim();
+  if (secret) return secret;
+  if (env.NODE_ENV === 'production') {
+    throw new Error('JWT_SECREAT_KEY or JWT_SECRET_KEY environment variable is required in production.');
+  }
+  return '';
+}
+
+function resolveEncryptionKey(env = process.env) {
+  const raw = env.TOKEN_ENCRYPTION_KEY;
   if (raw && raw.trim()) {
     const trimmed = raw.trim();
+    if (trimmed === '0000000000000000000000000000000000000000000000000000000000000000') {
+      if (env.NODE_ENV === 'production') {
+        throw new Error('TOKEN_ENCRYPTION_KEY cannot use the insecure placeholder in production.');
+      }
+    }
     if (/^[0-9a-fA-F]{64}$/.test(trimmed)) {
       return Buffer.from(trimmed, 'hex');
     }
     return crypto.createHash('sha256').update(trimmed).digest();
   }
-  const fallbackSecret = process.env.JWT_SECREAT_KEY || 'market-aura-dev-only-token-key';
-  return crypto.createHash('sha256').update(`token-enc:${fallbackSecret}`).digest();
+  const fallbackSecret = (env.JWT_SECREAT_KEY || env.JWT_SECRET_KEY || env.JWT_SECRET || '').trim();
+  if (!fallbackSecret && env.NODE_ENV === 'production') {
+    throw new Error('TOKEN_ENCRYPTION_KEY or JWT_SECREAT_KEY is required in production.');
+  }
+  return crypto.createHash('sha256').update(`token-enc:${fallbackSecret || 'market-aura-dev-only-token-key'}`).digest();
 }
 
 function encryptSecret(plaintext) {
@@ -86,6 +103,8 @@ function validatePublicHttpUrl(rawUrl, { allowHttpInDev = false } = {}) {
 }
 
 module.exports = {
+  getJwtSecret,
+  resolveEncryptionKey,
   encryptSecret,
   decryptSecret,
   isPrivateOrLoopbackHost,

@@ -87,6 +87,9 @@ const socialHooks = vi.hoisted(() => ({
   })),
   useSocialAccounts: vi.fn(() => ({ data: {}, isLoading: false, error: null })),
   useDisconnectInstagram: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useConnectedAccounts: vi.fn(() => ({ data: [], isLoading: false, error: null })),
+  useDisconnectAccountById: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
+  useRefreshSocialAccount: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
 }));
 vi.mock("@/features/social-accounts", () => socialHooks);
 const billingHooks = vi.hoisted(() => ({

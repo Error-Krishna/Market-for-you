@@ -6,7 +6,7 @@ import {
   updateMedia,
   type ListMediaParams,
 } from "./media-api";
-import type { CreateMediaPayload, UpdateMediaPayload } from "./media.types";
+import type { CreateMediaPayload, MediaAsset, UpdateMediaPayload } from "./media.types";
 
 export const MEDIA_QUERY_KEY = ["mediaLibrary"];
 
@@ -21,8 +21,16 @@ export function useCreateMedia() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: CreateMediaPayload) => createMedia(payload),
-    onSuccess: () => {
+    onSuccess: (newAsset) => {
       queryClient.invalidateQueries({ queryKey: MEDIA_QUERY_KEY });
+      if (newAsset) {
+        queryClient.setQueriesData<MediaAsset[]>({ queryKey: MEDIA_QUERY_KEY }, (old) => {
+          if (!old) return [newAsset];
+          const newId = newAsset._id || newAsset.id;
+          const exists = old.some((a) => (a._id || a.id) === newId);
+          return exists ? old : [newAsset, ...old];
+        });
+      }
     },
   });
 }

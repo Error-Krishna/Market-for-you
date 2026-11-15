@@ -2,6 +2,7 @@ import { apiClient } from "@/lib/api/client";
 import type {
   ConnectBlogPayload,
   ConnectEmailPayload,
+  ConnectedSocialAccount,
   OAuthPlatform,
   SocialAccounts,
   SocialPlatform,
@@ -11,6 +12,19 @@ import type {
 export async function getSocialStatus(): Promise<SocialStatusData> {
   const res = await apiClient.get("/v1/auth/social/status");
   return res.data.data;
+}
+
+export async function getConnectedAccounts(): Promise<ConnectedSocialAccount[]> {
+  const res = await apiClient.get("/v1/auth/social/accounts");
+  return res.data.data;
+}
+
+export async function disconnectAccountById(id: string): Promise<void> {
+  await apiClient.delete(`/v1/auth/social/accounts/${id}`);
+}
+
+export async function refreshSocialAccount(id: string): Promise<void> {
+  await apiClient.post(`/v1/auth/social/accounts/${id}/refresh`);
 }
 
 export async function updateTimezone(timezone: string): Promise<string> {

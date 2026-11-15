@@ -1,8 +1,8 @@
 module.exports = {
   instagram: {
-    oauthAuthorize: 'https://api.instagram.com/oauth/authorize',
-    accessToken: 'https://api.instagram.com/oauth/access_token',
-    graphApi: 'https://graph.instagram.com',
+    oauthAuthorize: 'https://www.facebook.com/v21.0/dialog/oauth',
+    accessToken: 'https://graph.facebook.com/v21.0/oauth/access_token',
+    graphApi: 'https://graph.facebook.com',
   },
   facebook: {
     oauthAuthorize: 'https://www.facebook.com/v21.0/dialog/oauth',

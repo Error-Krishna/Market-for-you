@@ -1,15 +1,29 @@
-const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const mongoose = require('mongoose');
 const MediaAsset = require('../../models/MediaAsset');
+const ScheduledPost = require('../../models/ScheduledPost');
 const { validatePublicHttpUrl } = require('../../utils/tokenCrypto');
+const { getStorageProvider } = require('../../services/storage/storageProvider');
+const { getStorageConfig } = require('../../services/storage/storageConfig');
 
-const UPLOADS_ROOT = path.resolve(__dirname, '..', '..', 'uploads', 'media');
-const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MiB
+const PRIMARY_UPLOADS_ROOT = path.resolve(__dirname, '..', '..', '..', 'uploads', 'media');
+const LEGACY_UPLOADS_ROOT = path.resolve(__dirname, '..', '..', 'uploads', 'media');
+
+// Ensure primary directory exists if writable
+try {
+  if (!fs.existsSync(PRIMARY_UPLOADS_ROOT)) {
+    fs.mkdirSync(PRIMARY_UPLOADS_ROOT, { recursive: true });
+  }
+} catch {
+  // Graceful on read-only environments
+}
+
+const UPLOADS_ROOT = PRIMARY_UPLOADS_ROOT;
 
 const MIME_TO_EXT = {
   'image/jpeg': { ext: 'jpg', mediaType: 'image' },
+  'image/jpg': { ext: 'jpg', mediaType: 'image' },
   'image/png': { ext: 'png', mediaType: 'image' },
   'image/webp': { ext: 'webp', mediaType: 'image' },
   'image/gif': { ext: 'gif', mediaType: 'image' },
@@ -18,7 +32,7 @@ const MIME_TO_EXT = {
 
 function matchesMagicBytes(buffer, mimeType) {
   if (!Buffer.isBuffer(buffer) || buffer.length < 4) return false;
-  if (mimeType === 'image/jpeg') {
+  if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
     return buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
   }
   if (mimeType === 'image/png') {
@@ -39,22 +53,17 @@ function matchesMagicBytes(buffer, mimeType) {
   return false;
 }
 
-function getBaseBackendUrl(req) {
-  const configured = process.env.PUBLIC_BACKEND_URL?.trim();
-  if (configured) return configured.replace(/\/+$/, '');
-  const protocol = req.protocol || 'http';
-  const host = req.get('host') || `localhost:${process.env.PORT || 8000}`;
-  return `${protocol}://${host}`;
-}
-
-function parseDataPayload(dataBase64, declaredMime) {
-  let mimeType = declaredMime;
+function parseDataPayload(dataBase64, declaredMime, maxBytes = 10 * 1024 * 1024) {
+  let mimeType = declaredMime ? String(declaredMime).trim().toLowerCase() : undefined;
   let base64Body = dataBase64;
   if (typeof dataBase64 === 'string' && dataBase64.startsWith('data:')) {
-    const match = dataBase64.match(/^data:([^;]+);base64,(.+)$/);
+    const match = dataBase64.match(/^data:([^;,]+)(?:;[^,]*)?;base64,(.+)$/s);
     if (!match) return { error: 'Malformed data URL payload.' };
-    mimeType = mimeType || match[1];
+    mimeType = mimeType || match[1].trim().toLowerCase();
     base64Body = match[2];
+  }
+  if (mimeType === 'image/jpg') {
+    mimeType = 'image/jpeg';
   }
   const spec = MIME_TO_EXT[mimeType];
   if (!spec) {
@@ -63,14 +72,16 @@ function parseDataPayload(dataBase64, declaredMime) {
   if (typeof base64Body !== 'string' || !base64Body.trim()) {
     return { error: 'Media file content is required.' };
   }
-  const buffer = Buffer.from(base64Body, 'base64');
-  if (buffer.length === 0 || buffer.length > MAX_UPLOAD_BYTES) {
-    return { error: 'Media file must be between 1 byte and 10 MB.' };
+  const cleanedBase64 = base64Body.replace(/\s+/g, '');
+  const buffer = Buffer.from(cleanedBase64, 'base64');
+  if (buffer.length === 0 || buffer.length > maxBytes) {
+    const maxMb = (maxBytes / (1024 * 1024)).toFixed(0);
+    return { error: `Media file must be between 1 byte and ${maxMb} MB.` };
   }
   if (!matchesMagicBytes(buffer, mimeType)) {
     return { error: 'File contents do not match the declared media type.' };
   }
-  return { buffer, mimeType, ...spec };
+  return { buffer, mimeType, ext: spec.ext, mediaType: spec.mediaType };
 }
 
 function normalizeTags(tags) {
@@ -80,17 +91,6 @@ function normalizeTags(tags) {
       .filter((tag) => typeof tag === 'string' && tag.trim())
       .map((tag) => tag.trim().slice(0, 50))
   )].slice(0, 15);
-}
-
-function removeStoredFile(storageKey) {
-  if (!storageKey) return;
-  const fullPath = path.resolve(UPLOADS_ROOT, storageKey);
-  if (!fullPath.startsWith(UPLOADS_ROOT + path.sep)) return;
-  try {
-    if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
-  } catch (err) {
-    console.warn('Media file cleanup warning:', err.message);
-  }
 }
 
 const listMedia = async (req, res) => {
@@ -126,29 +126,98 @@ const createMedia = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Media title is required.' });
     }
 
+    const { limits } = getStorageConfig();
+
     let finalUrl;
     let storageKey = null;
+    let storageProviderName = 'local';
     let finalMime = mimeType || 'image/jpeg';
     let finalMediaType = mediaType === 'video' ? 'video' : 'image';
     let sizeBytes = 0;
     let sourceType;
 
     if (dataBase64) {
-      const parsed = parseDataPayload(dataBase64, mimeType);
+      if (!limits.uploadsEnabled) {
+        return res.status(503).json({
+          success: false,
+          code: 'UPLOADS_DISABLED',
+          message: 'Media uploads are temporarily disabled by the administrator.',
+        });
+      }
+
+      const parsed = parseDataPayload(dataBase64, mimeType, limits.maxUploadBytes);
       if (parsed.error) {
         return res.status(400).json({ success: false, message: parsed.error });
       }
+
+      // Quota check: monthly upload operations limit & storage quota check
+      if (mongoose.connection.readyState === 1 || (MediaAsset.countDocuments && MediaAsset.countDocuments.mock)) {
+        const startOfMonth = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
+        const monthlyCount = await MediaAsset.countDocuments({
+          userId,
+          sourceType: 'upload',
+          createdAt: { $gte: startOfMonth },
+        });
+        if (monthlyCount >= limits.monthlyUploadLimit) {
+          return res.status(429).json({
+            success: false,
+            code: 'MONTHLY_UPLOAD_LIMIT_EXCEEDED',
+            message: `Monthly upload limit of ${limits.monthlyUploadLimit} files reached. Please upgrade your plan or wait for the next billing cycle.`,
+          });
+        }
+
+        if (typeof MediaAsset.aggregate === 'function') {
+          const userBytesAgg = await MediaAsset.aggregate([
+            { $match: { userId: new mongoose.Types.ObjectId(userId) } },
+            { $group: { _id: null, totalBytes: { $sum: '$sizeBytes' } } },
+          ]);
+          const currentBytes = userBytesAgg[0]?.totalBytes || 0;
+          if (currentBytes + parsed.buffer.length > limits.userStorageQuotaBytes) {
+            const quotaMb = Math.round(limits.userStorageQuotaBytes / (1024 * 1024));
+            return res.status(413).json({
+              success: false,
+              code: 'STORAGE_QUOTA_EXCEEDED',
+              message: `Storage quota exceeded. Your account has a maximum storage limit of ${quotaMb} MB.`,
+            });
+          }
+        }
+      }
+
+      // Duplicate upload check: reuse existing asset if identical title, size, and mime exist
+      if (mongoose.connection.readyState === 1 || (MediaAsset.findOne && MediaAsset.findOne.mock)) {
+        const existingDuplicate = await MediaAsset.findOne({
+          userId,
+          title: title.trim().slice(0, 160),
+          sizeBytes: parsed.buffer.length,
+          mimeType: parsed.mimeType,
+        });
+        if (existingDuplicate) {
+          return res.status(200).json({
+            success: true,
+            message: 'Existing media asset reused.',
+            media: existingDuplicate,
+            duplicateReused: true,
+          });
+        }
+      }
+
       sourceType = 'upload';
       finalMime = parsed.mimeType;
       finalMediaType = parsed.mediaType;
       sizeBytes = parsed.buffer.length;
 
-      const userDir = path.join(UPLOADS_ROOT, userId);
-      fs.mkdirSync(userDir, { recursive: true });
-      const fileName = `${crypto.randomUUID()}.${parsed.ext}`;
-      storageKey = path.join(userId, fileName);
-      fs.writeFileSync(path.join(UPLOADS_ROOT, storageKey), parsed.buffer);
-      finalUrl = `${getBaseBackendUrl(req)}/uploads/media/${userId}/${fileName}`;
+      const provider = getStorageProvider();
+      const rawKey = provider.buildStorageKey({ userId, ext: parsed.ext });
+      const uploadResult = await provider.upload({
+        buffer: parsed.buffer,
+        key: rawKey,
+        contentType: finalMime,
+        metadata: { userId, title: title.slice(0, 50) },
+        req,
+      });
+      storageKey = uploadResult.key;
+      finalUrl = uploadResult.url;
+      storageProviderName = uploadResult.provider || provider.name;
     } else if (url) {
       const validated = validatePublicHttpUrl(url, { allowHttpInDev: true });
       if (!validated) {
@@ -158,6 +227,7 @@ const createMedia = async (req, res) => {
         });
       }
       sourceType = 'url';
+      storageProviderName = 'url';
       finalUrl = validated;
       if (/\.(mp4|mov|webm)(\?|$)/i.test(validated)) finalMediaType = 'video';
     } else {
@@ -167,18 +237,29 @@ const createMedia = async (req, res) => {
       });
     }
 
-    const asset = await MediaAsset.create({
-      userId,
-      title: title.trim().slice(0, 160),
-      altText: typeof altText === 'string' ? altText.trim().slice(0, 500) : '',
-      tags: normalizeTags(tags),
-      mediaType: finalMediaType,
-      sourceType,
-      url: finalUrl,
-      storageKey,
-      mimeType: finalMime,
-      sizeBytes,
-    });
+    let asset;
+    try {
+      asset = await MediaAsset.create({
+        userId,
+        title: title.trim().slice(0, 160),
+        altText: typeof altText === 'string' ? altText.trim().slice(0, 500) : '',
+        tags: normalizeTags(tags),
+        mediaType: finalMediaType,
+        sourceType,
+        storageProvider: storageProviderName,
+        url: finalUrl,
+        storageKey,
+        mimeType: finalMime,
+        sizeBytes,
+      });
+    } catch (dbErr) {
+      // Clean up orphaned upload if database persistence fails
+      if (storageKey) {
+        const provider = getStorageProvider(storageProviderName);
+        await provider.delete(storageKey).catch(() => {});
+      }
+      throw dbErr;
+    }
 
     return res.status(201).json({ success: true, message: 'Media asset saved', media: asset });
   } catch (error) {
@@ -198,6 +279,7 @@ const updateMedia = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Media asset not found' });
     }
 
+    const { limits } = getStorageConfig();
     const { title, altText, tags, url, dataBase64, mimeType, mediaType } = req.body || {};
 
     if (title !== undefined) {
@@ -214,39 +296,72 @@ const updateMedia = async (req, res) => {
     }
 
     if (dataBase64) {
-      const parsed = parseDataPayload(dataBase64, mimeType);
+      if (!limits.uploadsEnabled) {
+        return res.status(503).json({
+          success: false,
+          code: 'UPLOADS_DISABLED',
+          message: 'Media uploads are temporarily disabled by the administrator.',
+        });
+      }
+      const parsed = parseDataPayload(dataBase64, mimeType, limits.maxUploadBytes);
       if (parsed.error) {
         return res.status(400).json({ success: false, message: parsed.error });
       }
-      removeStoredFile(asset.storageKey);
-      const userDir = path.join(UPLOADS_ROOT, userId);
-      fs.mkdirSync(userDir, { recursive: true });
-      const fileName = `${crypto.randomUUID()}.${parsed.ext}`;
-      const newKey = path.join(userId, fileName);
-      fs.writeFileSync(path.join(UPLOADS_ROOT, newKey), parsed.buffer);
+
+      const provider = getStorageProvider();
+      const newKey = provider.buildStorageKey({ userId, ext: parsed.ext });
+      const uploadResult = await provider.upload({
+        buffer: parsed.buffer,
+        key: newKey,
+        contentType: parsed.mimeType,
+        metadata: { userId, title: asset.title.slice(0, 50) },
+        req,
+      });
+
+      const oldKey = asset.storageKey;
+      const oldProviderName = asset.storageProvider || 'local';
 
       asset.sourceType = 'upload';
-      asset.storageKey = newKey;
-      asset.url = `${getBaseBackendUrl(req)}/uploads/media/${userId}/${fileName}`;
+      asset.storageKey = uploadResult.key;
+      asset.url = uploadResult.url;
+      asset.storageProvider = uploadResult.provider || provider.name;
       asset.mimeType = parsed.mimeType;
       asset.mediaType = parsed.mediaType;
       asset.sizeBytes = parsed.buffer.length;
+
+      try {
+        await asset.save();
+        if (oldKey) {
+          const oldProvider = getStorageProvider(oldProviderName);
+          await oldProvider.delete(oldKey).catch(() => {});
+        }
+      } catch (saveErr) {
+        // Clean up new upload if save failed
+        await provider.delete(uploadResult.key).catch(() => {});
+        throw saveErr;
+      }
     } else if (url !== undefined && url !== asset.url) {
       const validated = validatePublicHttpUrl(url, { allowHttpInDev: true });
       if (!validated) {
         return res.status(400).json({ success: false, message: 'Provide a valid public HTTPS media URL.' });
       }
-      removeStoredFile(asset.storageKey);
+      if (asset.storageKey) {
+        const oldProvider = getStorageProvider(asset.storageProvider || 'local');
+        await oldProvider.delete(asset.storageKey).catch(() => {});
+      }
       asset.sourceType = 'url';
       asset.storageKey = null;
+      asset.storageProvider = 'url';
       asset.url = validated;
       asset.sizeBytes = 0;
       if (mediaType && ['image', 'video'].includes(mediaType)) {
         asset.mediaType = mediaType;
       }
+      await asset.save();
+    } else {
+      await asset.save();
     }
 
-    await asset.save();
     return res.status(200).json({ success: true, message: 'Media asset updated', media: asset });
   } catch (error) {
     console.error('Update media failed:', error.message);
@@ -260,11 +375,30 @@ const deleteMedia = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid media ID.' });
     }
     const userId = String(req.user.id);
+
+    // Active scheduled post check: prevent deleting asset if referenced by scheduled/processing posts
+    if (mongoose.connection.readyState === 1 || (ScheduledPost.findOne && ScheduledPost.findOne.mock)) {
+      const activePost = await ScheduledPost.findOne({
+        userId,
+        status: { $in: ['scheduled', 'processing'] },
+        'platforms.mediaAssetIds': req.params.id,
+      });
+      if (activePost) {
+        return res.status(409).json({
+          success: false,
+          message: 'Cannot delete media asset because it is referenced by an active scheduled post.',
+        });
+      }
+    }
+
     const asset = await MediaAsset.findOneAndDelete({ _id: req.params.id, userId });
     if (!asset) {
       return res.status(404).json({ success: false, message: 'Media asset not found' });
     }
-    removeStoredFile(asset.storageKey);
+    if (asset.storageKey) {
+      const provider = getStorageProvider(asset.storageProvider || 'local');
+      await provider.delete(asset.storageKey);
+    }
     return res.status(200).json({ success: true, message: 'Media asset deleted' });
   } catch (error) {
     console.error('Delete media failed:', error.message);
@@ -277,9 +411,14 @@ const serveUploadedMedia = (req, res) => {
   if (!/^[a-fA-F0-9]{24}$/.test(userId) || !/^[a-fA-F0-9-]+\.(jpg|png|webp|gif|mp4)$/.test(filename)) {
     return res.status(404).json({ success: false, message: 'Media not found' });
   }
-  const filePath = path.resolve(UPLOADS_ROOT, userId, filename);
-  if (!filePath.startsWith(UPLOADS_ROOT + path.sep) || !fs.existsSync(filePath)) {
-    return res.status(404).json({ success: false, message: 'Media not found' });
+  let filePath = path.resolve(PRIMARY_UPLOADS_ROOT, userId, filename);
+  if (!filePath.startsWith(PRIMARY_UPLOADS_ROOT + path.sep) || !fs.existsSync(filePath)) {
+    const legacyPath = path.resolve(LEGACY_UPLOADS_ROOT, userId, filename);
+    if (legacyPath.startsWith(LEGACY_UPLOADS_ROOT + path.sep) && fs.existsSync(legacyPath)) {
+      filePath = legacyPath;
+    } else {
+      return res.status(404).json({ success: false, message: 'Media not found' });
+    }
   }
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
@@ -293,4 +432,6 @@ module.exports = {
   deleteMedia,
   serveUploadedMedia,
   UPLOADS_ROOT,
+  PRIMARY_UPLOADS_ROOT,
+  LEGACY_UPLOADS_ROOT,
 };

@@ -20,6 +20,11 @@ const mediaAssetSchema = new mongoose.Schema({
     enum: ['upload', 'url'],
     required: true,
   },
+  storageProvider: {
+    type: String,
+    enum: ['r2', 'local', 'url'],
+    default: 'local',
+  },
   url: { type: String, required: true, trim: true, maxlength: 2048 },
   storageKey: { type: String, default: null },
   mimeType: { type: String, default: 'image/jpeg' },

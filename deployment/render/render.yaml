@@ -1,0 +1,90 @@
+# Reference Blueprint copy for Render Web Service deployment
+# Frontend is hosted independently on Vercel.
+
+services:
+  - type: web
+    name: market-aura-api
+    runtime: node
+    rootDir: market-aura-4u-backend-main
+    buildCommand: npm install
+    startCommand: node src/app.js
+    healthCheckPath: /health
+    plan: free
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: PUBLIC_BACKEND_URL
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: CHECKOUT_ENABLED
+        value: "true"
+      - key: AUTH_PROXY_MODE
+        value: direct
+      - key: MONGO_URI
+        sync: false
+      - key: MONGO_MAX_POOL_SIZE
+        value: "20"
+      - key: JWT_SECREAT_KEY
+        generateValue: true
+      - key: TOKEN_ENCRYPTION_KEY
+        generateValue: true
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-20b
+      - key: MEDIA_STORAGE_PROVIDER
+        value: r2
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET_NAME
+        sync: false
+      - key: R2_ENDPOINT
+        sync: false
+      - key: R2_PUBLIC_BASE_URL
+        sync: false
+      - key: R2_REGION
+        value: auto
+      - key: CRON_SECRET
+        generateValue: true
+      - key: META_UNIFIED_CONFIG_ID
+        sync: false
+      - key: RECOMMENDER_URL
+        fromService:
+          type: web
+          name: market-aura-ml
+          property: host
+          path: /recommend
+      - key: RECOMMENDER_HEALTH_URL
+        fromService:
+          type: web
+          name: market-aura-ml
+          property: host
+          path: /health
+      - key: RECOMMENDER_AUTH_MODE
+        value: none
+      - key: RECOMMENDER_TIMEOUT_MS
+        value: 30000
+
+  - type: web
+    name: market-aura-ml
+    runtime: docker
+    dockerfilePath: CAPSTONE/Dockerfile
+    dockerContext: CAPSTONE
+    healthCheckPath: /health
+    plan: free
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: RECOMMENDER_HOST
+        value: 0.0.0.0
+      - key: HF_HUB_OFFLINE
+        value: "1"
