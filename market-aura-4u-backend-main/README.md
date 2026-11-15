@@ -1,149 +1,96 @@
-# Market Aura 4U Backend
+# Market Aura 4U — Backend REST API
 
-Backend API for Market Aura 4U, a marketing SaaS application for generating and publishing social media content.
+The Node.js Express 5 REST API and background scheduler worker for **Market Aura 4U**, providing brand-grounded AI generation, multi-platform publishing, durable post scheduling, AES-256-GCM token encryption, and Cloudflare R2 media storage.
 
-See [generation validation and limits](docs/generation-safety.md) for the current
-request contract, configuration, offline tests, and scaling limitations.
+---
 
-See [private recommender authentication](docs/recommender-auth.md) for Cloud Run
-identity tokens, audience configuration, local development and IAM prerequisites.
+## Architecture & Technology Stack
 
-See [CORS origin configuration](docs/cors.md) for allowed frontend origins,
-production requirements, and credentialed request behavior.
+- **Runtime:** Node.js 22 LTS (`>=20.0.0`, verified with `v22.23.5` in `.node-version`)
+- **Web Framework:** Express 5 (`^5.1.0`)
+- **Database:** MongoDB 7 / MongoDB Atlas via Mongoose 8 (`^8.19.2`)
+- **Authentication:** JSON Web Tokens (`jsonwebtoken` `^9.0.2`), `bcrypt` (`^6.0.0`), `cookie-parser` (`^1.4.7`)
+- **Object Storage:** Cloudflare R2 via AWS SDK v3 S3 client (`@aws-sdk/client-s3` `^3.1169.0`)
+- **Social Media APIs:** `twitter-api-v2` (`^1.27.0`), Meta Graph API v21.0, LinkedIn REST API
+- **AI Inference:** Groq Cloud Chat Completions (`openai/gpt-oss-20b`)
+- **Payments:** Razorpay (`^2.9.6`)
+- **HTTP Client:** Axios (`^1.13.2`) and native `fetch`
+- **Testing:** Node.js built-in test runner (`node --test`)
 
-See [authentication validation and limits](docs/auth-safety.md) for registration
-and login payloads, attempt budgets, and proxy/scaling limitations.
+---
 
-See [verified proxy configuration](docs/auth-proxy.md) for safe client-IP resolution
-and the [shared-limiter storage proposal](docs/shared-limits-proposal.md) for the
-database change awaiting approval before cross-instance quotas can be implemented.
+## Directory Structure
 
-See [onboarding and safe user responses](docs/onboarding.md) for completion
-validation, partial brand updates, and the onboarding/profile response contracts.
-
-## Tech Stack
-
-- Node.js
-- Express.js
-- MongoDB
-- Mongoose
-- JWT authentication
-- bcrypt
-- Axios
-- Groq API
-- Instagram integration
-- Twitter/X integration
-- Razorpay
-- CORS
-- Cookie Parser
-
-## Prerequisites
-
-- Node.js
-- npm
-- MongoDB
-
-## Installation
-
-```bash
-npm install
 ```
-
-## Environment Variables
-
-Create a `.env` file in the project root and use `.env.example` as the reference:
-
-```env
-PORT=8000
-NODE_ENV=development
-
-MONGO_URI=
-
-JWT_SECREAT_KEY=
-
-GROQ_API_KEY=
-
-INSTAGRAM_APP_ID=
-INSTAGRAM_APP_SECRET=
-INSTAGRAM_REDIRECT_URI=
-
-TWITTER_ACCESS_SECRET=
-TWITTER_ACCESS_TOKEN=
-TWITTER_API_KEY=
-TWITTER_API_SECRET=
-TWITTER_CLIENT_ID=
-TWITTER_CLIENT_SECRET=
-
-RAZORPAY_KEY_ID=
-RAZORPAY_KEY_SECRET=
-```
-
-Do not commit `.env` to source control.
-
-## Running the Backend
-
-```bash
-npm start
-```
-
-The application entry point is:
-
-```text
-src/app.js
-```
-
-## API Base Path
-
-The main API is mounted under:
-
-```text
-/api
-```
-
-Version 1 endpoints are mounted under:
-
-```text
-/api/v1
-```
-
-### Main API Areas
-
-- `/api/v1/auth` — authentication and user onboarding
-- `/api/v1/content` — content generation, publishing, and history
-- `/api/v1/auth/instagram` — Instagram authentication
-- `/api/v1/user/payment` — payment operations
-- `/api/v1/publish/instagram` — Instagram publishing
-
-## Project Structure
-
-```text
-src/
-├── app.js
+market-aura-4u-backend-main/src/
+├── app.js                         # Application entry point, CORS, payload limits, health checks
 ├── config/
-│   └── db.js
+│   ├── auth.js                    # Rate limiting thresholds & window configuration
+│   ├── authProxy.js               # Client IP proxy resolution (direct / trusted-cidrs)
+│   ├── cors.js                    # Origin validation & HTTPS enforcement
+│   ├── db.js                      # MongoDB Atlas connection pool & timeout options
+│   ├── generation.js              # Concurrency and timeout bounds for Groq AI
+│   ├── recommender.js             # Recommender microservice configuration
+│   └── urls.js                    # External platform endpoints
 ├── controllers/
-│   ├── auth/
-│   ├── connectAccount/
-│   ├── content/
-│   └── payments/
+│   ├── auth/                      # Signup, Login, Logout, Profile, Onboarding, Settings
+│   ├── connectAccount/            # Multi-platform OAuth & credentials (socialConnectController.js)
+│   ├── content/                   # Content generation (Groq), history, and direct publishing
+│   ├── media/                     # Base64 parsing, magic byte checks, R2 storage, quotas
+│   └── payments/                  # Razorpay order creation and HMAC-SHA256 signature verification
 ├── middleware/
-├── models/
+│   ├── auth.js                    # Dual-mode JWT & cookie verification
+│   ├── authAttempts.js            # Token bucket IP and account rate limiting
+│   ├── cors.js                    # Origin whitelist filter
+│   └── isOnboarded.js             # Workspace access gatekeeper
+├── models/                        # Mongoose schemas (User, SocialAccount, ScheduledPost, MediaAsset, Job, OAuthState)
 ├── routes/
-│   └── v1/
-└── utils/
+│   ├── index.js                   # Root router mounting /v1
+│   └── v1/                        # Feature routers (auth, social, content, posts, media, scheduler, payments, settings)
+├── services/
+│   ├── publishers/                # Platform publishers (twitter, linkedin, instagram, facebook, email, blog)
+│   ├── schedulerService.js        # In-process 15s scheduler, atomic MongoDB claims, outcome uncertainty handler
+│   └── storage/                   # Cloudflare R2 and local filesystem storage abstraction
+└── utils/                         # AES-256-GCM token crypto, SSRF validation, diagnostics, error normalizers
 ```
 
-## Authentication
+---
 
-The backend uses JWT-based authentication.
+## Available Scripts
 
-Authentication middleware checks tokens from:
+Run from `market-aura-4u-backend-main/` or via root `npm --prefix market-aura-4u-backend-main <script>`:
 
-- Cookies
-- `Authorization: Bearer <token>` headers
+```bash
+# Start backend API on http://localhost:8000
+npm start
 
-## Development Notes
+# Start development server with nodemon auto-reload
+npm run dev
 
-Environment variables are used for database credentials, authentication secrets, third-party API credentials, and payment credentials.
+# Run CI test suite (492 tests across 31 test files)
+npm run test:ci
 
-Keep secrets out of source control and use `.env.example` as the template for local configuration.
+# Run complete test suite
+npm test
+
+# Run isolated MVP journey test
+npm run test:isolated-mvp
+```
+
+---
+
+## Health Check Routes
+
+- `GET /health`: Basic process health check. Returns `200 OK` `{ "status": "ok", "timestamp": "..." }`. (Does not test database).
+- `GET /ready`: Deep database readiness probe. Checks `mongoose.connection.readyState === 1`. Returns `200 OK` `{ "status": "ready" }` or `503 Service Unavailable`.
+
+---
+
+## Environment Configuration
+
+Copy `market-aura-4u-backend-main/.env.example` to `market-aura-4u-backend-main/.env`.
+
+See the centralized documentation for exhaustive variable specifications:
+- [docs/ENVIRONMENT_VARIABLES.md](file:///Users/krishnagoyal/Development/Market%20Aura%20For%20you/docs/ENVIRONMENT_VARIABLES.md)
+- [docs/API_REFERENCE.md](file:///Users/krishnagoyal/Development/Market%20Aura%20For%20you/docs/API_REFERENCE.md)
+- [docs/DEPLOYMENT.md](file:///Users/krishnagoyal/Development/Market%20Aura%20For%20you/docs/DEPLOYMENT.md)
