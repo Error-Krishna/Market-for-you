@@ -461,7 +461,7 @@ const initInstagramConnect = async (req, res) => {
     if (configId) {
       params.set('config_id', configId);
     } else {
-      params.set('scope', 'instagram_basic,instagram_content_publish,instagram_manage_messages');
+      params.set('scope', 'instagram_basic,instagram_content_publish');
     }
 
     return res.status(200).json({
@@ -476,18 +476,19 @@ const initInstagramConnect = async (req, res) => {
 
 const instagramCallback = async (req, res) => {
   const frontend = getFrontendBaseUrl();
-  const { state, code, error: oauthError, error_description } = req.query;
+  const { state, code, error: oauthError } = req.query;
   if (oauthError) {
-    return res.redirect(`${frontend}/social-accounts?error=${encodeURIComponent(String(error_description || oauthError))}&platform=instagram`);
+    const reason = oauthError === 'access_denied' ? 'access_denied' : 'provider_error';
+    return res.redirect(`${frontend}/social-accounts?error=${reason}&platform=instagram`);
   }
   if (!state || !code) {
     return res.redirect(`${frontend}/social-accounts?error=missing_code&platform=instagram`);
   }
-  const stored = await OAuthState.findOneAndDelete({ state: String(state), platform: 'instagram' });
-  if (!stored) {
-    return res.redirect(`${frontend}/social-accounts?error=invalid_or_expired_state&platform=instagram`);
-  }
   try {
+    const stored = await OAuthState.findOneAndDelete({ state: String(state), platform: 'instagram' });
+    if (!stored) {
+      return res.redirect(`${frontend}/social-accounts?error=invalid_or_expired_state&platform=instagram`);
+    }
     const appId = process.env.FACEBOOK_APP_ID || process.env.INSTAGRAM_APP_ID;
     const appSecret = process.env.FACEBOOK_APP_SECRET || process.env.INSTAGRAM_APP_SECRET;
     const redirectUri = getRedirectUri('instagram', req);
@@ -503,11 +504,13 @@ const instagramCallback = async (req, res) => {
     });
 
     const accessToken = tokenRes.data.access_token;
+    if (typeof accessToken !== 'string' || !accessToken) throw new Error('Missing access token');
     const tokenType = tokenRes.data.token_type || 'bearer';
     const expiresIn = Number(tokenRes.data.expires_in || 5184000); // 60 days default
 
     // Account Discovery Routine: Multi-fallback for Unified Login (SUAT) and standard User tokens
     let discoveredAccounts = [];
+    let discoveryFailed = false;
 
     // Method 1: /me/assigned_instagram_accounts (standard for Unified Login Business Integration SUAT)
     try {
@@ -518,8 +521,11 @@ const instagramCallback = async (req, res) => {
         },
         timeout: 10000,
       });
+      if (assignedRes.data?.paging?.next) {
+        return res.redirect(`${frontend}/social-accounts?error=instagram_account_selection_required&platform=instagram`);
+      }
       if (Array.isArray(assignedRes.data?.data) && assignedRes.data.data.length > 0) {
-        discoveredAccounts = assignedRes.data.data.map((acc) => ({
+        discoveredAccounts = assignedRes.data.data.filter((acc) => acc?.id).map((acc) => ({
           id: String(acc.id),
           username: acc.username || null,
           displayName: acc.name || (acc.username ? `@${acc.username}` : 'Instagram Professional'),
@@ -528,6 +534,7 @@ const instagramCallback = async (req, res) => {
         }));
       }
     } catch {
+      discoveryFailed = true;
       // /me/assigned_instagram_accounts not available or token is page/user scoped
     }
 
@@ -541,6 +548,9 @@ const instagramCallback = async (req, res) => {
           },
           timeout: 10000,
         });
+        if (pagesRes.data?.paging?.next) {
+          return res.redirect(`${frontend}/social-accounts?error=instagram_account_selection_required&platform=instagram`);
+        }
         if (Array.isArray(pagesRes.data?.data)) {
           for (const page of pagesRes.data.data) {
             const igAcc = page.instagram_business_account;
@@ -557,6 +567,7 @@ const instagramCallback = async (req, res) => {
           }
         }
       } catch {
+        discoveryFailed = true;
         // Fallback to /me
       }
     }
@@ -571,7 +582,7 @@ const instagramCallback = async (req, res) => {
           },
           timeout: 10000,
         });
-        if (meRes.data?.id && (meRes.data?.username || meRes.data?.account_type)) {
+        if (meRes.data?.id && ['BUSINESS', 'CREATOR'].includes(meRes.data?.account_type)) {
           discoveredAccounts.push({
             id: String(meRes.data.id),
             username: meRes.data.username || null,
@@ -581,12 +592,19 @@ const instagramCallback = async (req, res) => {
           });
         }
       } catch {
+        discoveryFailed = true;
         // Direct /me failed
       }
     }
 
+    discoveredAccounts = [...new Map(discoveredAccounts.map((account) => [account.id, account])).values()];
+    if (discoveredAccounts.length > 1) {
+      return res.redirect(`${frontend}/social-accounts?error=instagram_account_selection_required&platform=instagram`);
+    }
+
     if (discoveredAccounts.length === 0) {
-      return res.redirect(`${frontend}/social-accounts?error=no_instagram_account_found&platform=instagram`);
+      const reason = discoveryFailed ? 'account_discovery_failed' : 'no_instagram_account_found';
+      return res.redirect(`${frontend}/social-accounts?error=${reason}&platform=instagram`);
     }
 
     const primaryAccount = discoveredAccounts[0];
@@ -606,7 +624,8 @@ const instagramCallback = async (req, res) => {
           profileImage: profileImage || null,
           encryptedAccessToken: encAccess,
           tokenExpiry: new Date(Date.now() + expiresIn * 1000),
-          grantedScopes: ['instagram_basic', 'instagram_content_publish', 'instagram_manage_messages'],
+          // Neither the config ID nor the token exchange proves which scopes Meta granted.
+          grantedScopes: [],
           connectionStatus: 'connected',
           lastConnectedAt: new Date(),
           lastRefreshedAt: new Date(),
@@ -636,7 +655,7 @@ const instagramCallback = async (req, res) => {
     });
     return res.redirect(`${frontend}/social-accounts?connected=instagram`);
   } catch (error) {
-    console.error('Instagram OAuth callback error:', error.response?.data || error.message);
+    console.error('Instagram OAuth callback failed');
     return res.redirect(`${frontend}/social-accounts?error=oauth_exchange_failed&platform=instagram`);
   }
 };

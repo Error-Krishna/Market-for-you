@@ -107,7 +107,7 @@ describe('Meta Instagram Unified Login Architecture & Publishing Suite', () => {
     assert.equal(res.statusCode, 200);
     const authUrl = new URL(res.body.url);
     assert.equal(authUrl.searchParams.get('config_id'), null);
-    assert.equal(authUrl.searchParams.get('scope'), 'instagram_basic,instagram_content_publish,instagram_manage_messages');
+    assert.equal(authUrl.searchParams.get('scope'), 'instagram_basic,instagram_content_publish');
   });
 
   test('Initiation: Rejects missing META_UNIFIED_CONFIG_ID with CONFIGURATION_ERROR in production', async () => {
@@ -153,7 +153,7 @@ describe('Meta Instagram Unified Login Architecture & Publishing Suite', () => {
     assert.ok(res.redirectUrl.includes('platform=instagram'));
   });
 
-  test('Callback: Handles provider error redirect with descriptive error message', async () => {
+  test('Callback: Maps provider denial without exposing its description', async () => {
     const req = {
       query: {
         error: 'access_denied',
@@ -164,7 +164,8 @@ describe('Meta Instagram Unified Login Architecture & Publishing Suite', () => {
 
     await instagramCallback(req, res);
 
-    assert.ok(res.redirectUrl.includes('error=Permissions%20not%20granted%20by%20user'));
+    assert.ok(res.redirectUrl.includes('error=access_denied'));
+    assert.ok(!res.redirectUrl.includes('Permissions'));
     assert.ok(res.redirectUrl.includes('platform=instagram'));
   });
 
@@ -231,7 +232,7 @@ describe('Meta Instagram Unified Login Architecture & Publishing Suite', () => {
     assert.equal(updateSet.displayName, 'Market Aura Brand');
     assert.equal(updateSet.profileImage, 'https://cdn.instagram.com/p/pic.jpg');
     assert.equal(updateSet.connectionStatus, 'connected');
-    assert.deepEqual(updateSet.grantedScopes, ['instagram_basic', 'instagram_content_publish', 'instagram_manage_messages']);
+    assert.deepEqual(updateSet.grantedScopes, []);
 
     // Verify token encryption
     const decrypted = decryptSecret(updateSet.encryptedAccessToken);
@@ -302,6 +303,67 @@ describe('Meta Instagram Unified Login Architecture & Publishing Suite', () => {
     assert.equal(savedSocialAccount.update.$set.username, 'main_brand_ig');
   });
 
+  for (const [label, assigned, pages] of [
+    ['multiple assigned accounts', { data: [{ id: 'one' }, { id: 'two' }] }, null],
+    ['multiple page-linked accounts', { data: [] }, { data: [
+      { id: 'p1', instagram_business_account: { id: 'one' } },
+      { id: 'p2', instagram_business_account: { id: 'two' } },
+    ] }],
+    ['paginated assigned accounts', { data: [{ id: 'one' }], paging: { next: 'https://example.invalid/next' } }, null],
+    ['paginated pages', { data: [] }, { data: [{ instagram_business_account: { id: 'one' } }], paging: { next: 'https://example.invalid/next' } }],
+  ]) {
+    test(`Callback: Does not connect an arbitrary account for ${label}`, async () => {
+      mock.method(OAuthState, 'findOneAndDelete', async () => ({ userId: '507f1f77bcf86cd799439011' }));
+      mock.method(axios, 'get', async (url) => {
+        if (url === urls.instagram.accessToken) return { data: { access_token: 'fake' } };
+        if (url.includes('/me/assigned_instagram_accounts')) return { data: assigned };
+        if (url.includes('/me/accounts') && pages) return { data: pages };
+        throw new Error('Unexpected request');
+      });
+      const saveAccount = mock.method(SocialAccount, 'findOneAndUpdate', async () => { throw new Error('Unexpected save'); });
+      const saveUser = mock.method(User, 'findByIdAndUpdate', async () => { throw new Error('Unexpected save'); });
+      const res = mockRes();
+      await instagramCallback({ query: { state: 'valid', code: 'valid' }, get: () => 'localhost:8000', protocol: 'http' }, res);
+      assert.match(res.redirectUrl, /error=instagram_account_selection_required/);
+      assert.equal(saveAccount.mock.callCount(), 0);
+      assert.equal(saveUser.mock.callCount(), 0);
+    });
+  }
+
+  test('Callback: Duplicate page entries for one Instagram account do not cause ambiguity', async () => {
+    mock.method(OAuthState, 'findOneAndDelete', async () => ({ userId: '507f1f77bcf86cd799439011' }));
+    mock.method(axios, 'get', async (url) => {
+      if (url === urls.instagram.accessToken) return { data: { access_token: 'fake' } };
+      if (url.includes('/me/assigned_instagram_accounts')) return { data: { data: [] } };
+      if (url.includes('/me/accounts')) return { data: { data: [
+        { id: 'p1', instagram_business_account: { id: 'one', username: 'demo' } },
+        { id: 'p2', instagram_business_account: { id: 'one', username: 'demo' } },
+      ] } };
+      throw new Error('Unexpected request');
+    });
+    let savedId;
+    mock.method(SocialAccount, 'findOneAndUpdate', async (filter) => { savedId = filter.providerAccountId; });
+    mock.method(User, 'findByIdAndUpdate', async () => ({}));
+    const res = mockRes();
+    await instagramCallback({ query: { state: 'valid', code: 'valid' }, get: () => 'localhost:8000', protocol: 'http' }, res);
+    assert.match(res.redirectUrl, /connected=instagram/);
+    assert.equal(savedId, 'one');
+  });
+
+  test('Callback: A Facebook user profile is not treated as an Instagram account', async () => {
+    mock.method(OAuthState, 'findOneAndDelete', async () => ({ userId: '507f1f77bcf86cd799439011' }));
+    mock.method(axios, 'get', async (url) => {
+      if (url === urls.instagram.accessToken) return { data: { access_token: 'fake' } };
+      if (url.includes('/me/assigned_instagram_accounts') || url.includes('/me/accounts')) return { data: { data: [] } };
+      return { data: { id: 'facebook-user', username: 'facebook-user' } };
+    });
+    const saveAccount = mock.method(SocialAccount, 'findOneAndUpdate', async () => {});
+    const res = mockRes();
+    await instagramCallback({ query: { state: 'valid', code: 'valid' }, get: () => 'localhost:8000', protocol: 'http' }, res);
+    assert.match(res.redirectUrl, /error=no_instagram_account_found/);
+    assert.equal(saveAccount.mock.callCount(), 0);
+  });
+
   test('Callback: Redirects with error when user selects zero Instagram accounts in dialog', async () => {
     const stateRecord = {
       state: 'valid_state_no_account',
@@ -337,6 +399,37 @@ describe('Meta Instagram Unified Login Architecture & Publishing Suite', () => {
 
     assert.ok(res.redirectUrl.includes('error=no_instagram_account_found'));
     assert.ok(res.redirectUrl.includes('platform=instagram'));
+  });
+
+  test('Callback: Distinguishes discovery failures from an empty account list', async () => {
+    mock.method(OAuthState, 'findOneAndDelete', async () => ({ userId: '507f1f77bcf86cd799439033' }));
+    mock.method(axios, 'get', async (url) => {
+      if (url === urls.instagram.accessToken) return { data: { access_token: 'fake' } };
+      throw new Error('provider unavailable');
+    });
+    const res = mockRes();
+    await instagramCallback({ query: { state: 'valid', code: 'valid' }, get: () => 'localhost:8000', protocol: 'http' }, res);
+    assert.match(res.redirectUrl, /error=account_discovery_failed/);
+  });
+
+  test('Callback: Does not claim no account exists when a discovery method fails', async () => {
+    mock.method(OAuthState, 'findOneAndDelete', async () => ({ userId: '507f1f77bcf86cd799439033' }));
+    mock.method(axios, 'get', async (url) => {
+      if (url === urls.instagram.accessToken) return { data: { access_token: 'fake' } };
+      if (url.includes('/me/accounts')) throw new Error('provider unavailable');
+      return { data: { data: [] } };
+    });
+    const res = mockRes();
+    await instagramCallback({ query: { state: 'valid', code: 'valid' }, get: () => 'localhost:8000', protocol: 'http' }, res);
+    assert.match(res.redirectUrl, /error=account_discovery_failed/);
+  });
+
+  test('Callback: Handles state-store failure without leaking details', async () => {
+    mock.method(OAuthState, 'findOneAndDelete', async () => { throw new Error('sensitive detail'); });
+    const res = mockRes();
+    await instagramCallback({ query: { state: 'valid', code: 'valid' } }, res);
+    assert.match(res.redirectUrl, /error=oauth_exchange_failed/);
+    assert.ok(!res.redirectUrl.includes('sensitive'));
   });
 
   test('Multi-Tenancy & IDOR: User A and User B cannot disconnect each others Instagram accounts', async () => {
