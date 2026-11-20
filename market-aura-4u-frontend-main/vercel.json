@@ -1,4 +1,9 @@
 {
+  "git": {
+    "deploymentEnabled": {
+      "fix/render-private-recommender": false
+    }
+  },
   "headers": [
     {
       "source": "/assets/(.*)",

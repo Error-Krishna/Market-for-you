@@ -1,4 +1,9 @@
 {
+  "git": {
+    "deploymentEnabled": {
+      "fix/render-private-recommender": false
+    }
+  },
   "version": 2,
   "buildCommand": "npm run build",
   "outputDirectory": "market-aura-4u-frontend-main/dist",

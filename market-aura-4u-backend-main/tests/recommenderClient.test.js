@@ -70,6 +70,33 @@ test('local request sends only JSON with no metadata call or authorization heade
   assert.deepEqual(calls, ['http://localhost:8001/recommend']);
 });
 
+test('explicit Render private configuration uses the internal endpoint without Google identity', async () => {
+  const recommendUrl = 'http://market-aura-ml-ab12:8080/recommend';
+  const env = { RENDER: 'true', RECOMMENDER_URL: recommendUrl, RECOMMENDER_AUTH_MODE: 'none' };
+  const config = readConfig(env);
+  assert.equal(config.health, 'http://market-aura-ml-ab12:8080/health');
+  const calls = [];
+  const recommend = createRecommenderClient(config, { fetchImpl: async (url, options) => {
+    calls.push(url);
+    assert.deepEqual(options.headers, { 'Content-Type': 'application/json' });
+    assert.equal(options.redirect, 'error');
+    return new Response(JSON.stringify({ recommended_topic: 'skincare' }));
+  } });
+  assert.equal((await recommend(payload)).data.recommended_topic, 'skincare');
+  assert.deepEqual(calls, [recommendUrl]);
+
+  for (const override of [
+    { RENDER: undefined },
+    { K_SERVICE: 'cloud-run-node' },
+    { RECOMMENDER_AUTH_MODE: undefined },
+    { RECOMMENDER_URL: 'http://market-aura-ml-ab12.onrender.com:8080/recommend' },
+    { RECOMMENDER_URL: 'http://other-service-ab12:8080/recommend' },
+    { RECOMMENDER_URL: 'http://market-aura-ml-ab12/recommend' },
+  ]) {
+    assert.throws(() => readConfig({ ...env, ...override }), /Cloud Run|Unauthenticated/);
+  }
+});
+
 test('private call acquires a Google ID token with the exact service audience and a shared deadline', async () => {
   const calls = [];
   const serviceToken = token();

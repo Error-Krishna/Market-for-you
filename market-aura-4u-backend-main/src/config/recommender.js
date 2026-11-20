@@ -11,14 +11,17 @@ function readRecommenderConfig(env = process.env) {
   const recommend = endpoint(env.RECOMMENDER_URL || 'http://localhost:8001/recommend', 'RECOMMENDER_URL');
   const loopback = ['localhost', '127.0.0.1', '[::1]', 'ml-recommender', 'market-aura-ml'].includes(recommend.hostname)
     || recommend.hostname.endsWith('.internal');
+  // Render assigns private services a short hostname with a generated suffix.
+  const renderPrivate = env.RENDER === 'true' && recommend.protocol === 'http:'
+    && Boolean(recommend.port) && /^market-aura-ml-[a-z0-9]+$/.test(recommend.hostname);
   const authMode = env.RECOMMENDER_AUTH_MODE || (loopback ? 'none' : 'cloud-run');
   if (!['none', 'cloud-run'].includes(authMode)) {
     throw new Error('RECOMMENDER_AUTH_MODE must be none or cloud-run');
   }
   let audience = null;
   if (authMode === 'none') {
-    if (!loopback || env.K_SERVICE) {
-      throw new Error('Unauthenticated recommender access is allowed only for local loopback development');
+    if ((!loopback && !renderPrivate) || env.K_SERVICE) {
+      throw new Error('Unauthenticated recommender access requires a local or supported Render private endpoint');
     }
     if (env.RECOMMENDER_AUDIENCE) {
       throw new Error('RECOMMENDER_AUDIENCE requires cloud-run authentication');
