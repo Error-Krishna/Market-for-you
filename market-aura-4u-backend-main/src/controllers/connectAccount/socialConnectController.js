@@ -661,7 +661,8 @@ const initFacebookConnect = async (req, res) => {
     const params = new URLSearchParams({
       client_id: appId,
       redirect_uri: getRedirectUri('facebook', req),
-      scope: 'pages_manage_posts,pages_read_engagement,pages_show_list',
+      scope: 'pages_manage_posts,pages_read_engagement,pages_show_list,business_management',
+      auth_type: 'rerequest',
       response_type: 'code',
       state,
     });
@@ -702,15 +703,67 @@ const facebookCallback = async (req, res) => {
     const userAccessToken = tokenRes.data.access_token;
     const expiresIn = Number(tokenRes.data.expires_in || 5184000);
 
-    const pagesRes = await axios.get(`${urls.facebook.graphApi}/me/accounts`, {
-      params: { fields: 'id,name,access_token', access_token: userAccessToken },
-    });
-    const rawPages = Array.isArray(pagesRes.data?.data) ? pagesRes.data.data : [];
-    const pages = rawPages.map((p) => ({
-      id: p.id,
-      name: p.name,
-      accessTokenEnc: encryptSecret(p.access_token),
-    }));
+    const rawPages = [];
+    try {
+      const pagesRes = await axios.get(`${urls.facebook.graphApi}/me/accounts`, {
+        params: { fields: 'id,name,access_token', access_token: userAccessToken },
+        timeout: 10000,
+      });
+      if (Array.isArray(pagesRes.data?.data)) {
+        rawPages.push(...pagesRes.data.data);
+      }
+    } catch (e) {
+      console.warn('Facebook /me/accounts warning:', e.message);
+    }
+
+    // Business Portfolio fallback discovery (for Meta Business-owned Pages like Udhyog Saathi)
+    if (rawPages.length === 0) {
+      try {
+        const bizRes = await axios.get(`${urls.facebook.graphApi}/me/businesses`, {
+          params: { fields: 'id,name', access_token: userAccessToken },
+          timeout: 10000,
+        });
+        const businesses = Array.isArray(bizRes.data?.data) ? bizRes.data.data : [];
+        for (const biz of businesses) {
+          try {
+            const ownedRes = await axios.get(`${urls.facebook.graphApi}/${biz.id}/owned_pages`, {
+              params: { fields: 'id,name,access_token', access_token: userAccessToken },
+              timeout: 10000,
+            });
+            if (Array.isArray(ownedRes.data?.data)) {
+              rawPages.push(...ownedRes.data.data);
+            }
+          } catch {
+            // Ignore owned_pages discovery error
+          }
+          try {
+            const clientRes = await axios.get(`${urls.facebook.graphApi}/${biz.id}/client_pages`, {
+              params: { fields: 'id,name,access_token', access_token: userAccessToken },
+              timeout: 10000,
+            });
+            if (Array.isArray(clientRes.data?.data)) {
+              rawPages.push(...clientRes.data.data);
+            }
+          } catch {
+            // Ignore client_pages discovery error
+          }
+        }
+      } catch (e) {
+        console.warn('Facebook /me/businesses discovery warning:', e.message);
+      }
+    }
+
+    const pageMap = new Map();
+    for (const p of rawPages) {
+      if (p.id && !pageMap.has(String(p.id))) {
+        pageMap.set(String(p.id), {
+          id: String(p.id),
+          name: p.name || 'Facebook Page',
+          accessTokenEnc: p.access_token ? encryptSecret(p.access_token) : encUserAccess,
+        });
+      }
+    }
+    const pages = Array.from(pageMap.values());
     const firstPage = pages[0] || null;
 
     const encUserAccess = encryptSecret(userAccessToken);
@@ -725,7 +778,7 @@ const facebookCallback = async (req, res) => {
           displayName: firstPage?.name || 'Facebook Page',
           encryptedAccessToken: encPageAccess,
           tokenExpiry: new Date(Date.now() + expiresIn * 1000),
-          grantedScopes: ['pages_manage_posts', 'pages_read_engagement', 'pages_show_list'],
+          grantedScopes: ['pages_manage_posts', 'pages_read_engagement', 'pages_show_list', 'business_management'],
           connectionStatus: pages.length > 0 ? 'connected' : 'disconnected',
           lastConnectedAt: new Date(),
           lastRefreshedAt: new Date(),
