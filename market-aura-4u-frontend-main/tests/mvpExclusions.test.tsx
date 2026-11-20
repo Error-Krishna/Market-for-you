@@ -118,6 +118,25 @@ test("social accounts page renders connected platform controls for all 6 channel
   expect(socialHooks.useSocialStatus).toHaveBeenCalled();
 });
 
+test.each([
+  ["access_denied", /cancelled or access was denied/i],
+  ["provider_error", /Meta app is active and your account has tester access/i],
+  ["invalid_or_expired_state", /expired or was already used/i],
+  ["no_instagram_account_found", /professional account is linked to a Facebook Page/i],
+  ["instagram_account_selection_required", /No account was connected/i],
+  ["account_discovery_failed", /couldn't check for your Instagram account/i],
+  ["oauth_exchange_failed", /callback URL/i],
+  ["unexpected-private-provider-message", /Meta app is active and your account has tester access/i],
+])("Instagram callback error %s shows actionable guidance", (errorCode, expected) => {
+  render(
+    <MemoryRouter initialEntries={[`/social-accounts?platform=instagram&error=${errorCode}`]}>
+      <SocialAccountsPage />
+    </MemoryRouter>,
+  );
+  expect(screen.getByText(expected)).toBeTruthy();
+  expect(screen.queryByText(/unexpected-private-provider-message/i)).toBeNull();
+});
+
 test("home highlights generating, scheduling, and multi-platform publishing", () => {
   render(
     <MemoryRouter>

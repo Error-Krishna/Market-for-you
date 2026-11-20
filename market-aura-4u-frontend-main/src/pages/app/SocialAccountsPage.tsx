@@ -49,6 +49,25 @@ const COMMON_TIMEZONES = [
   "Australia/Sydney",
 ];
 
+const INSTAGRAM_CONNECTION_ERRORS: Record<string, string> = {
+  access_denied:
+    "Instagram connection was cancelled or access was denied. Try again and approve access to the account you want to connect.",
+  provider_error:
+    "Meta could not complete the connection. Check that the Meta app is active and your account has tester access, then try again.",
+  missing_code:
+    "Meta did not return a complete connection response. Start Instagram Connect again.",
+  invalid_or_expired_state:
+    "This connection attempt expired or was already used. Start Instagram Connect again.",
+  no_instagram_account_found:
+    "No eligible Instagram account was found. Check that your professional account is linked to a Facebook Page you can manage and was selected in Meta.",
+  instagram_account_selection_required:
+    "More than one Instagram account may be available. No account was connected. Try again and select only the account you want in Meta, if that option is offered.",
+  account_discovery_failed:
+    "We couldn't check for your Instagram account with Meta. Check the app settings and permissions, then try again.",
+  oauth_exchange_failed:
+    "Instagram connection could not be completed. Check the Meta app settings and callback URL, then try again.",
+};
+
 interface OAuthCardMeta {
   key: OAuthPlatform;
   title: string;
@@ -106,6 +125,13 @@ export default function SocialAccountsPage() {
       };
     }
     if (oauthError) {
+      if (searchParams.get("platform") === "instagram") {
+        return {
+          type: "error",
+          text:
+            INSTAGRAM_CONNECTION_ERRORS[oauthError] ?? INSTAGRAM_CONNECTION_ERRORS.provider_error,
+        };
+      }
       return { type: "error", text: `OAuth connection failed: ${oauthError}` };
     }
     return null;
