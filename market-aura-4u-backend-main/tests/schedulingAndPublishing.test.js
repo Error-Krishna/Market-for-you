@@ -8,6 +8,7 @@ const MediaAsset = require('../src/models/MediaAsset');
 const ScheduledPost = require('../src/models/ScheduledPost');
 const { UPLOADS_ROOT } = require('../src/controllers/media/mediaController');
 const { publish: publishEmail } = require('../src/services/publishers/emailPublisher');
+const linkedinPublisher = require('../src/services/publishers/linkedinPublisher');
 const { encryptSecret, decryptSecret } = require('../src/utils/tokenCrypto');
 const { computeNextRecommendedDate } = require('../src/utils/recommendedTime');
 const { createPost, publishPostNow } = require('../src/controllers/content/scheduleController');
@@ -528,5 +529,91 @@ test('Serverless Scheduler Runner: handles auth and executes due jobs', async ()
   } finally {
     process.env = { ...originalEnv };
   }
+});
+
+test('linkedinPublisher uses configurable LinkedIn-Version header and handles post publishing', async () => {
+  const originalVersion = process.env.LINKEDIN_API_VERSION;
+  try {
+    delete process.env.LINKEDIN_API_VERSION;
+    assert.equal(linkedinPublisher.getLinkedInApiVersion(), '202611');
+
+    process.env.LINKEDIN_API_VERSION = '202610';
+    assert.equal(linkedinPublisher.getLinkedInApiVersion(), '202610');
+
+    const headersSeen = [];
+    mock.method(globalThis, 'fetch', async (url, opts) => {
+      headersSeen.push({ url: String(url), headers: opts?.headers });
+      return new Response(JSON.stringify({}), {
+        status: 201,
+        headers: { 'x-restli-id': 'urn:li:share:12345678' },
+      });
+    });
+
+    const user = {
+      socialAccounts: {
+        linkedin: {
+          isConnected: true,
+          memberUrn: 'urn:li:person:target_user_1',
+          accessTokenEnc: encryptSecret('sample-access-token'),
+          expiresAt: new Date(Date.now() + 60000),
+        },
+      },
+    };
+
+    const res = await linkedinPublisher.publish({
+      user,
+      content: ['A successful LinkedIn launch announcement!'],
+    });
+
+    assert.equal(res.externalPostId, 'urn:li:share:12345678');
+    assert.equal(res.externalPostUrl, 'https://www.linkedin.com/feed/update/urn%3Ali%3Ashare%3A12345678/');
+    assert.equal(headersSeen.length, 1);
+    assert.equal(headersSeen[0].headers['LinkedIn-Version'], '202610');
+    assert.equal(headersSeen[0].headers['X-Restli-Protocol-Version'], '2.0.0');
+    assert.equal(headersSeen[0].headers.Authorization, 'Bearer sample-access-token');
+  } finally {
+    if (originalVersion !== undefined) {
+      process.env.LINKEDIN_API_VERSION = originalVersion;
+    } else {
+      delete process.env.LINKEDIN_API_VERSION;
+    }
+  }
+});
+
+test('linkedinPublisher surfaces descriptive error when LinkedIn rejects an inactive version', async () => {
+  mock.method(globalThis, 'fetch', async () => {
+    return new Response(
+      JSON.stringify({
+        status: 426,
+        code: 'NONEXISTENT_VERSION',
+        message: 'Requested version 20250101 is not active',
+      }),
+      { status: 426, headers: { 'Content-Type': 'application/json' } }
+    );
+  });
+
+  const user = {
+    socialAccounts: {
+      linkedin: {
+        isConnected: true,
+        memberUrn: 'urn:li:person:target_user_2',
+        accessTokenEnc: encryptSecret('sample-access-token'),
+      },
+    },
+  };
+
+  await assert.rejects(
+    async () => {
+      await linkedinPublisher.publish({
+        user,
+        content: ['Test post'],
+      });
+    },
+    (err) => {
+      assert.equal(err.code, 'PLATFORM_API_ERROR');
+      assert.ok(err.message.includes('Requested version 20250101 is not active'));
+      return true;
+    }
+  );
 });
 

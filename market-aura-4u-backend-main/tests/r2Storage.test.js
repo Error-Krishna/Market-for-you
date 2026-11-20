@@ -190,6 +190,39 @@ test('R2StorageProvider: upload, delete and head send correct S3 commands and me
   assert.equal(sentCommands[2].input.Key, key);
 });
 
+test('R2StorageProvider: URI-encodes non-ASCII metadata values (Hindi, emojis, smart quotes) to prevent ERR_INVALID_CHAR', async () => {
+  const sentCommands = [];
+  const mockS3Client = {
+    send: async (command) => {
+      sentCommands.push(command);
+      return { $metadata: { httpStatusCode: 200 } };
+    },
+  };
+
+  const provider = new R2StorageProvider({
+    bucketName: 'market-aura-bucket',
+    publicBaseUrl: 'https://media.marketaura4u.com',
+    prefix: 'media',
+    s3Client: mockS3Client,
+  });
+
+  const key = 'media/users/user1/media/test-unicode.png';
+  const rawTitle = 'छोटे कारखानों की बड़ी डिजिटल ताकत 🚀';
+  await provider.upload({
+    buffer: VALID_JPEG_BUFFER,
+    key,
+    contentType: 'image/png',
+    metadata: { userId: 'user1', title: rawTitle },
+  });
+
+  assert.equal(sentCommands.length, 1);
+  const putCmd = sentCommands[0];
+  assert.equal(putCmd.input.Metadata.userid, 'user1');
+  assert.equal(putCmd.input.Metadata.title, encodeURIComponent(rawTitle));
+  // Ensure the header value is strictly ASCII printable characters
+  assert.match(putCmd.input.Metadata.title, /^[\x20-\x7E]+$/);
+});
+
 test('mediaController: createMedia uploads to R2 and sets storageProvider and canonical public URL', async () => {
   process.env.MEDIA_STORAGE_PROVIDER = 'r2';
   process.env.R2_ACCOUNT_ID = 'test-account-id';

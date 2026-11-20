@@ -54,7 +54,12 @@ class R2StorageProvider {
     if (metadata && typeof metadata === 'object') {
       for (const [k, v] of Object.entries(metadata)) {
         if (typeof v === 'string' || typeof v === 'number') {
-          sanitizedMetadata[k.toLowerCase().replace(/[^a-z0-9_-]/g, '')] = String(v);
+          const cleanKey = k.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+          if (cleanKey) {
+            // S3 metadata values are sent as HTTP headers (x-amz-meta-*), which must strictly be ASCII.
+            // Non-ASCII characters (e.g. Hindi/Unicode, emojis, smart quotes) cause Node's HTTP client to throw ERR_INVALID_CHAR.
+            sanitizedMetadata[cleanKey] = encodeURIComponent(String(v).slice(0, 200));
+          }
         }
       }
     }

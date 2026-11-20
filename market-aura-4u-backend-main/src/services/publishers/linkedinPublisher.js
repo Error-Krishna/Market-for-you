@@ -2,6 +2,12 @@ const urls = require('../../config/urls');
 const { decryptSecret } = require('../../utils/tokenCrypto');
 const { PublisherError, classifyHttpError, loadMediaBuffer } = require('./publisherErrors');
 
+const DEFAULT_LINKEDIN_API_VERSION = '202611';
+
+function getLinkedInApiVersion() {
+  return process.env.LINKEDIN_API_VERSION?.trim() || DEFAULT_LINKEDIN_API_VERSION;
+}
+
 function extractLinkedInText(content) {
   if (typeof content === 'string') return content.trim();
   if (Array.isArray(content)) {
@@ -15,13 +21,14 @@ function extractLinkedInText(content) {
 }
 
 async function uploadImageToLinkedIn(accessToken, memberUrn, mediaUrl) {
+  const version = getLinkedInApiVersion();
   const { buffer, mimeType } = await loadMediaBuffer(mediaUrl);
   const initRes = await fetch(`${urls.linkedin.apiBase}/rest/images?action=initializeUpload`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
-      'LinkedIn-Version': '202501',
+      'LinkedIn-Version': version,
       'X-Restli-Protocol-Version': '2.0.0',
     },
     body: JSON.stringify({
@@ -98,6 +105,7 @@ async function publish({ user, content, mediaUrls = [] }) {
     };
   }
 
+  const version = getLinkedInApiVersion();
   let res;
   try {
     res = await fetch(`${urls.linkedin.apiBase}/rest/posts`, {
@@ -105,7 +113,7 @@ async function publish({ user, content, mediaUrls = [] }) {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
-        'LinkedIn-Version': '202501',
+        'LinkedIn-Version': version,
         'X-Restli-Protocol-Version': '2.0.0',
       },
       body: JSON.stringify(body),
@@ -127,4 +135,4 @@ async function publish({ user, content, mediaUrls = [] }) {
   };
 }
 
-module.exports = { publish, extractLinkedInText };
+module.exports = { publish, extractLinkedInText, getLinkedInApiVersion, DEFAULT_LINKEDIN_API_VERSION };
